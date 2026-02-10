@@ -171,7 +171,7 @@ public:
 
 private:
     void PrintResults() {
-        auto stats = m_engine->GetStatistics();
+        const auto& stats = m_engine->GetStatistics();
         
         std::cout << "\n\n";
         std::cout << "Scan Complete\n";

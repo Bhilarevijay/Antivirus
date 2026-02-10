@@ -73,7 +73,7 @@ public:
     void CancelScan() override;
     
     [[nodiscard]] ScanState GetState() const noexcept override;
-    [[nodiscard]] ScanStatistics GetStatistics() const noexcept override;
+    [[nodiscard]] const ScanStatistics& GetStatistics() const noexcept override;
     [[nodiscard]] std::vector<ScanResult> GetResults() const override;
     
     void SetScanCallback(ScanCallback callback) override;

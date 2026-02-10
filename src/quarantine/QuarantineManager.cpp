@@ -25,11 +25,11 @@ QuarantineManager::QuarantineManager(
     , m_indexPath(quarantinePath / constants::QUARANTINE_INDEX)
     , m_logger(std::move(logger))
 {
-    Initialize();
+    (void)Initialize();
 }
 
 QuarantineManager::~QuarantineManager() {
-    SaveIndex();
+    (void)SaveIndex();
 }
 
 bool QuarantineManager::Initialize() {
@@ -56,7 +56,7 @@ bool QuarantineManager::Initialize() {
 #endif
     
     // Load existing index
-    LoadIndex();
+    (void)LoadIndex();
     
     m_initialized = true;
     m_logger->Info("Quarantine initialized: {}", m_quarantinePath.string());
@@ -101,17 +101,17 @@ std::optional<QuarantineEntry> QuarantineManager::Quarantine(
             m_logger->Error("Failed to quarantine file: {}", ec.message());
             return std::nullopt;
         }
-        std::filesystem::remove(path, ec);
+        (void)std::filesystem::remove(path, ec);
     }
     
 #ifdef _WIN32
     // Apply restrictive permissions
-    ApplySecurityPermissions(entry.quarantinePath);
+    (void)ApplySecurityPermissions(entry.quarantinePath);
 #endif
     
     // Add to index
     m_entries[entry.id] = entry;
-    SaveIndex();
+    (void)SaveIndex();
     
     m_logger->Info("Quarantined: {} -> {}", 
         path.string(), entry.quarantinePath.string());
@@ -137,7 +137,7 @@ bool QuarantineManager::Restore(
     std::error_code ec;
     
     // Create parent directories if needed
-    std::filesystem::create_directories(target.parent_path(), ec);
+    (void)std::filesystem::create_directories(target.parent_path(), ec);
     
     // Move file back
     std::filesystem::rename(entry.quarantinePath, target, ec);
@@ -147,12 +147,12 @@ bool QuarantineManager::Restore(
             m_logger->Error("Failed to restore file: {}", ec.message());
             return false;
         }
-        std::filesystem::remove(entry.quarantinePath, ec);
+        (void)std::filesystem::remove(entry.quarantinePath, ec);
     }
     
     // Remove from index
     m_entries.erase(it);
-    SaveIndex();
+    (void)SaveIndex();
     
     m_logger->Info("Restored: {} -> {}", entryId, target.string());
     return true;
@@ -175,7 +175,7 @@ bool QuarantineManager::Delete(const std::string& entryId) {
     }
     
     m_entries.erase(it);
-    SaveIndex();
+    (void)SaveIndex();
     
     m_logger->Info("Deleted quarantined file: {}", entryId);
     return true;
@@ -228,7 +228,7 @@ size_t QuarantineManager::Cleanup(uint32_t maxAgeDays) {
     }
     
     if (!toRemove.empty()) {
-        SaveIndex();
+        (void)SaveIndex();
         m_logger->Info("Cleaned up {} old quarantine entries", toRemove.size());
     }
     
@@ -312,6 +312,7 @@ bool QuarantineManager::SetQuarantineAcl() {
     // Create restrictive ACL: deny execute for everyone
     PACL pAcl = nullptr;
     PSECURITY_DESCRIPTOR pSd = nullptr;
+    (void)pSd;  // Unused but kept for future ACL expansion
     
     EXPLICIT_ACCESSW ea[2] = {};
     

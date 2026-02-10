@@ -104,7 +104,7 @@ public:
     /**
      * @brief Get current scan statistics
      */
-    [[nodiscard]] virtual ScanStatistics GetStatistics() const noexcept = 0;
+    [[nodiscard]] virtual const ScanStatistics& GetStatistics() const noexcept = 0;
     
     /**
      * @brief Get last scan results

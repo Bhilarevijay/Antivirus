@@ -101,7 +101,13 @@ namespace simd {
         __m256i cmp = _mm256_cmpeq_epi8(chunk, pattern);
         int mask = _mm256_movemask_epi8(cmp);
         if (mask != 0) {
+#if defined(_MSC_VER)
+            unsigned long idx;
+            _BitScanForward(&idx, static_cast<unsigned long>(mask));
+            return i + idx;
+#else
             return i + __builtin_ctz(mask);
+#endif
         }
     }
     

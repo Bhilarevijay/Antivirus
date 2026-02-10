@@ -223,9 +223,21 @@ std::optional<FileInfo> FileScanner::GetFileInfo(const FilePath& path) {
         FileInfo info;
         info.path = path;
         info.size = std::filesystem::file_size(path, ec);
-        info.lastModified = std::chrono::file_clock::to_sys(
-            std::filesystem::last_write_time(path, ec)
-        );
+        // Convert file_time to system_clock time_point
+        auto fileTime = std::filesystem::last_write_time(path, ec);
+        if (!ec) {
+            // Use clock_cast if available (C++20), otherwise approximate
+#if defined(__cpp_lib_chrono) && __cpp_lib_chrono >= 201907L && !defined(_MSC_VER)
+            info.lastModified = std::chrono::file_clock::to_sys(fileTime);
+#else
+            // Portable fallback: use last_write_time epoch difference
+            auto sctp = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
+                fileTime - std::filesystem::file_time_type::clock::now()
+                + std::chrono::system_clock::now()
+            );
+            info.lastModified = sctp;
+#endif
+        }
         info.isSymlink = std::filesystem::is_symlink(path, ec);
         
 #ifdef _WIN32

@@ -163,6 +163,9 @@ struct ScanResult {
 /**
  * @struct ScanStatistics
  * @brief Aggregate statistics for a scan operation
+ * 
+ * Uses atomic counters for thread-safe updates during scanning.
+ * Not copyable due to atomics - use snapshot() for copies.
  */
 struct ScanStatistics {
     std::atomic<uint64_t> totalFiles{0};        ///< Total files enumerated
@@ -175,6 +178,28 @@ struct ScanStatistics {
     
     Timestamp startTime;                        ///< When scan started
     Timestamp endTime;                          ///< When scan ended
+    
+    // Default constructor
+    ScanStatistics() = default;
+    
+    // Non-copyable due to atomics
+    ScanStatistics(const ScanStatistics&) = delete;
+    ScanStatistics& operator=(const ScanStatistics&) = delete;
+    ScanStatistics(ScanStatistics&&) = delete;
+    ScanStatistics& operator=(ScanStatistics&&) = delete;
+    
+    /// Reset all counters to zero
+    void Reset() noexcept {
+        totalFiles.store(0);
+        scannedFiles.store(0);
+        skippedFiles.store(0);
+        infectedFiles.store(0);
+        quarantinedFiles.store(0);
+        bytesScanned.store(0);
+        errorCount.store(0);
+        startTime = Timestamp{};
+        endTime = Timestamp{};
+    }
     
     [[nodiscard]] Duration elapsed() const noexcept {
         auto end = (endTime == Timestamp{}) 

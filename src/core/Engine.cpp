@@ -6,6 +6,10 @@
 #include "antivirus/core/Engine.hpp"
 #include <algorithm>
 
+#ifdef _WIN32
+    #include <Windows.h>
+#endif
+
 namespace antivirus {
 
 // ============================================================================
@@ -111,7 +115,7 @@ bool Engine::StartScan(const ScanConfig& config) {
         config.mode == ScanMode::Full ? "full" : "custom");
     
     // Reset statistics
-    m_stats = ScanStatistics{};
+    m_stats.Reset();
     m_stats.startTime = std::chrono::system_clock::now();
     
     // Clear previous results
@@ -208,18 +212,8 @@ ScanState Engine::GetState() const noexcept {
     return m_state.load();
 }
 
-ScanStatistics Engine::GetStatistics() const noexcept {
-    return ScanStatistics{
-        m_stats.totalFiles.load(),
-        m_stats.scannedFiles.load(),
-        m_stats.skippedFiles.load(),
-        m_stats.infectedFiles.load(),
-        m_stats.quarantinedFiles.load(),
-        m_stats.bytesScanned.load(),
-        m_stats.errorCount.load(),
-        m_stats.startTime,
-        m_stats.endTime
-    };
+const ScanStatistics& Engine::GetStatistics() const noexcept {
+    return m_stats;
 }
 
 std::vector<ScanResult> Engine::GetResults() const {
@@ -437,20 +431,32 @@ std::vector<FilePath> Engine::GetQuickScanPaths() const {
     
 #ifdef _WIN32
     // User profile locations
-    if (auto userProfile = std::getenv("USERPROFILE")) {
+    char* userProfile = nullptr;
+    size_t len = 0;
+    if (_dupenv_s(&userProfile, &len, "USERPROFILE") == 0 && userProfile) {
         paths.emplace_back(std::string(userProfile) + "\\Downloads");
         paths.emplace_back(std::string(userProfile) + "\\Desktop");
         paths.emplace_back(std::string(userProfile) + "\\AppData\\Local\\Temp");
         paths.emplace_back(std::string(userProfile) + "\\AppData\\Roaming");
+        free(userProfile);
     }
     
     // System temp
-    if (auto temp = std::getenv("TEMP")) {
+    char* temp = nullptr;
+    if (_dupenv_s(&temp, &len, "TEMP") == 0 && temp) {
         paths.emplace_back(temp);
+        free(temp);
     }
     
     // Common startup locations
     paths.emplace_back("C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Startup");
+#else
+    // Linux quick scan paths
+    if (auto home = std::getenv("HOME")) {
+        paths.emplace_back(std::string(home) + "/Downloads");
+        paths.emplace_back(std::string(home) + "/Desktop");
+        paths.emplace_back("/tmp");
+    }
 #endif
     
     return paths;
@@ -524,7 +530,7 @@ EngineBuilder& EngineBuilder::WithGpuCompute(std::shared_ptr<IGpuCompute> gpu) {
 }
 
 std::unique_ptr<Engine> EngineBuilder::Build() {
-    return std::make_unique<Engine>(
+    return std::unique_ptr<Engine>(new Engine(
         m_scanner,
         m_threadPool,
         m_signatureDb,
@@ -534,7 +540,7 @@ std::unique_ptr<Engine> EngineBuilder::Build() {
         m_logger,
         m_config,
         m_gpuCompute
-    );
+    ));
 }
 
 }  // namespace antivirus

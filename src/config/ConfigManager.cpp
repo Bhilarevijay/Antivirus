@@ -13,7 +13,7 @@ ConfigManager::ConfigManager(const std::filesystem::path& configPath)
     : m_configPath(configPath)
 {
     ResetToDefaults();
-    Load();
+    (void)Load();
 }
 
 bool ConfigManager::Load() {

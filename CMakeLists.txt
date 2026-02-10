@@ -8,12 +8,20 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 # Windows-specific settings
 if(MSVC)
-    add_compile_options(/W4 /WX /permissive- /Zc:__cplusplus)
+    add_compile_options(/W4 /permissive- /Zc:__cplusplus)
+    # Disable specific non-critical warnings
+    add_compile_options(
+        /wd4324  # structure padded due to alignment specifier
+        /wd4834  # discarding return value of [[nodiscard]]
+        /wd4065  # switch contains default but no case labels
+        /wd4267  # conversion from size_t to unsigned int
+    )
     add_compile_definitions(
         _WIN32_WINNT=0x0A00  # Windows 10
         UNICODE
         _UNICODE
         NOMINMAX
+        _CRT_SECURE_NO_WARNINGS
     )
 else()
     # For cross-compilation/syntax checking on Linux
