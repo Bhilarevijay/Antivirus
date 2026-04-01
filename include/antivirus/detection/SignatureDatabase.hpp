@@ -51,6 +51,13 @@ public:
     [[nodiscard]] bool Load(const std::filesystem::path& path);
     
     /**
+     * @brief Load all .db signature files from a directory
+     * @param dirPath Directory containing .db files
+     * @return true if at least one file loaded
+     */
+    [[nodiscard]] bool LoadDirectory(const std::filesystem::path& dirPath);
+    
+    /**
      * @brief Save signatures to file
      * @param path Path to save to
      * @return true if saved successfully
@@ -120,6 +127,11 @@ public:
     void BuildIndexes();
 
 private:
+    /// Internal: load a single file without locking/clearing/building
+    [[nodiscard]] size_t LoadFileInternal(const std::filesystem::path& path);
+    [[nodiscard]] size_t GetHashSignatureCountInternal() const noexcept;
+    [[nodiscard]] size_t GetPatternSignatureCountInternal() const noexcept;
+
     std::shared_ptr<ILogger> m_logger;
     
     // Thread safety

@@ -23,16 +23,58 @@ SignatureDatabase::SignatureDatabase(
 
 SignatureDatabase::~SignatureDatabase() = default;
 
-bool SignatureDatabase::Load(const std::filesystem::path& path) {
+bool SignatureDatabase::LoadDirectory(const std::filesystem::path& dirPath) {
     std::unique_lock<std::shared_mutex> lock(m_mutex);
     
-    std::ifstream file(path);
-    if (!file) {
-        m_logger->Warn("Signature database not found: {}", path.string());
+    if (!std::filesystem::exists(dirPath) || !std::filesystem::is_directory(dirPath)) {
+        m_logger->Warn("Signature directory not found: {}", dirPath.string());
         return false;
     }
     
     Clear();
+    
+    size_t totalCount = 0;
+    size_t fileCount = 0;
+    
+    for (const auto& entry : std::filesystem::directory_iterator(dirPath)) {
+        if (entry.path().extension() == ".db") {
+            size_t loaded = LoadFileInternal(entry.path());
+            if (loaded > 0) {
+                ++fileCount;
+                totalCount += loaded;
+            }
+        }
+    }
+    
+    // Build pattern matcher after all files loaded
+    m_patternMatcher->Build();
+    
+    m_logger->Info("Loaded {} signatures from {} files in {}", 
+        totalCount, fileCount, dirPath.string());
+    return fileCount > 0;
+}
+
+bool SignatureDatabase::Load(const std::filesystem::path& path) {
+    std::unique_lock<std::shared_mutex> lock(m_mutex);
+    
+    Clear();
+    
+    size_t count = LoadFileInternal(path);
+    if (count == 0) return false;
+    
+    // Build pattern matcher
+    m_patternMatcher->Build();
+    
+    m_logger->Info("Loaded {} signatures from {}", count, path.string());
+    return true;
+}
+
+size_t SignatureDatabase::LoadFileInternal(const std::filesystem::path& path) {
+    std::ifstream file(path);
+    if (!file) {
+        m_logger->Warn("Signature database not found: {}", path.string());
+        return 0;
+    }
     
     // Simple line-based format:
     // TYPE|ID|NAME|LEVEL|HASH_OR_PATTERN
@@ -51,43 +93,52 @@ bool SignatureDatabase::Load(const std::filesystem::path& path) {
         std::getline(iss, levelStr, '|');
         std::getline(iss, data);
         
-        SignatureEntry entry;
-        entry.id = id;
-        entry.name = name;
-        entry.level = static_cast<ThreatLevel>(std::stoi(levelStr));
-        
-        if (type == "MD5") {
-            entry.hashType = HashType::MD5;
-            entry.hash = HashEngine::HexToHash(data);
-            m_md5Signatures[data] = entry;
-            m_md5Bloom->Insert(entry.hash);
-        }
-        else if (type == "SHA1") {
-            entry.hashType = HashType::SHA1;
-            entry.hash = HashEngine::HexToHash(data);
-            m_sha1Signatures[data] = entry;
-            m_sha1Bloom->Insert(entry.hash);
-        }
-        else if (type == "SHA256") {
-            entry.hashType = HashType::SHA256;
-            entry.hash = HashEngine::HexToHash(data);
-            m_sha256Signatures[data] = entry;
-            m_sha256Bloom->Insert(entry.hash);
-        }
-        else if (type == "PATTERN") {
-            entry.hexPattern = HashEngine::HexToHash(data);
-            m_patternSignatures[id] = entry;
-            m_patternMatcher->AddPattern(data, id);
+        // Trim trailing whitespace/carriage return
+        while (!data.empty() && (data.back() == '\r' || data.back() == '\n' || data.back() == ' ')) {
+            data.pop_back();
         }
         
-        ++count;
+        // Validate fields
+        if (type.empty() || id.empty() || levelStr.empty() || data.empty()) continue;
+        
+        try {
+            SignatureEntry entry;
+            entry.id = id;
+            entry.name = name;
+            entry.level = static_cast<ThreatLevel>(std::stoi(levelStr));
+            
+            if (type == "MD5") {
+                entry.hashType = HashType::MD5;
+                entry.hash = HashEngine::HexToHash(data);
+                m_md5Signatures[data] = entry;
+                m_md5Bloom->Insert(entry.hash);
+            }
+            else if (type == "SHA1") {
+                entry.hashType = HashType::SHA1;
+                entry.hash = HashEngine::HexToHash(data);
+                m_sha1Signatures[data] = entry;
+                m_sha1Bloom->Insert(entry.hash);
+            }
+            else if (type == "SHA256") {
+                entry.hashType = HashType::SHA256;
+                entry.hash = HashEngine::HexToHash(data);
+                m_sha256Signatures[data] = entry;
+                m_sha256Bloom->Insert(entry.hash);
+            }
+            else if (type == "PATTERN") {
+                entry.hexPattern = HashEngine::HexToHash(data);
+                m_patternSignatures[id] = entry;
+                m_patternMatcher->AddPattern(data, id);
+            }
+            
+            ++count;
+        } catch (const std::exception&) {
+            // Skip malformed lines
+            continue;
+        }
     }
     
-    // Build pattern matcher
-    m_patternMatcher->Build();
-    
-    m_logger->Info("Loaded {} signatures from {}", count, path.string());
-    return true;
+    return count;
 }
 
 bool SignatureDatabase::Save(const std::filesystem::path& path) const {
@@ -230,16 +281,24 @@ std::vector<std::pair<SignatureEntry, size_t>> SignatureDatabase::ScanPatterns(
 
 size_t SignatureDatabase::GetSignatureCount() const noexcept {
     std::shared_lock<std::shared_mutex> lock(m_mutex);
-    return GetHashSignatureCount() + GetPatternSignatureCount();
+    return GetHashSignatureCountInternal() + GetPatternSignatureCountInternal();
 }
 
 size_t SignatureDatabase::GetHashSignatureCount() const noexcept {
     std::shared_lock<std::shared_mutex> lock(m_mutex);
-    return m_md5Signatures.size() + m_sha1Signatures.size() + m_sha256Signatures.size();
+    return GetHashSignatureCountInternal();
 }
 
 size_t SignatureDatabase::GetPatternSignatureCount() const noexcept {
     std::shared_lock<std::shared_mutex> lock(m_mutex);
+    return GetPatternSignatureCountInternal();
+}
+
+size_t SignatureDatabase::GetHashSignatureCountInternal() const noexcept {
+    return m_md5Signatures.size() + m_sha1Signatures.size() + m_sha256Signatures.size();
+}
+
+size_t SignatureDatabase::GetPatternSignatureCountInternal() const noexcept {
     return m_patternSignatures.size();
 }
 

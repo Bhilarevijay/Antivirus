@@ -105,7 +105,13 @@ void FileScanner::EnumerateDirectoryNative(
     }
     
     // Normalize and add \\?\ prefix for long path support
-    std::wstring searchPath = L"\\\\?\\" + path.wstring();
+    // The \\?\ prefix requires absolute paths, so canonicalize first
+    std::error_code ec;
+    auto absPath = std::filesystem::absolute(path, ec);
+    if (ec) {
+        absPath = path;  // fallback
+    }
+    std::wstring searchPath = L"\\\\?\\" + absPath.wstring();
     if (searchPath.back() != L'\\') {
         searchPath += L'\\';
     }

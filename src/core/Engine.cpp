@@ -5,6 +5,8 @@
 
 #include "antivirus/core/Engine.hpp"
 #include <algorithm>
+#include <iostream>
+#include <span>
 
 #ifdef _WIN32
     #include <Windows.h>
@@ -58,9 +60,13 @@ bool Engine::Initialize() {
     }
     
     // Load signatures
-    if (!ReloadSignatures()) {
-        m_logger->Warn("Failed to load signature database");
-        // Continue anyway - might be first run
+    try {
+        if (!ReloadSignatures()) {
+            m_logger->Warn("Failed to load signature database");
+            // Continue anyway - might be first run
+        }
+    } catch (const std::exception& e) {
+        m_logger->Warn("Failed to load signature database: {}", e.what());
     }
     
     m_logger->Info("Engine initialized with {} signatures", 
@@ -104,15 +110,33 @@ bool Engine::StartScan(const ScanConfig& config) {
         return false;
     }
     
+    // Try to transition from Idle to Initializing
     ScanState expected = ScanState::Idle;
     if (!m_state.compare_exchange_strong(expected, ScanState::Initializing)) {
-        m_logger->Warn("Cannot start scan: scan already in progress");
-        return false;
+        // If state is Completed, Cancelled, or Error, reset to Idle and retry
+        ScanState current = m_state.load();
+        if (current == ScanState::Completed || current == ScanState::Cancelled || current == ScanState::Error) {
+            m_state.store(ScanState::Idle);
+            expected = ScanState::Idle;
+            if (!m_state.compare_exchange_strong(expected, ScanState::Initializing)) {
+                m_logger->Warn("Cannot start scan: scan already in progress (state={})", static_cast<int>(m_state.load()));
+                return false;
+            }
+        } else {
+            m_logger->Warn("Cannot start scan: scan already in progress (state={})", static_cast<int>(current));
+            return false;
+        }
     }
     
-    m_logger->Info("Starting {} scan...", 
+    m_logger->Info("Starting {} scan with {} target paths...", 
         config.mode == ScanMode::Quick ? "quick" :
-        config.mode == ScanMode::Full ? "full" : "custom");
+        config.mode == ScanMode::Full ? "full" : "custom",
+        config.targetPaths.size());
+    
+    // Log each target path
+    for (const auto& p : config.targetPaths) {
+        m_logger->Info("  Scan target: {}", p.string());
+    }
     
     // Reset statistics
     m_stats.Reset();
@@ -128,14 +152,15 @@ bool Engine::StartScan(const ScanConfig& config) {
     m_currentConfig = config;
     
     // Set cancellation token for scanner
-    static std::atomic<bool> cancelled{false};
-    cancelled.store(false);
-    m_scanner->SetCancellationToken(&cancelled);
+    m_cancelledToken.store(false);
+    m_scanner->SetCancellationToken(&m_cancelledToken);
     
     // Start file enumeration and scanning
     SetState(ScanState::Scanning);
     
     for (const auto& targetPath : config.targetPaths) {
+        if (m_state.load() == ScanState::Cancelled) break;
+        
         m_scanner->EnumerateFiles(
             targetPath,
             [this](const FileInfo& fileInfo) {
@@ -247,6 +272,14 @@ bool Engine::ReloadSignatures() {
     }
     
     auto sigPath = m_config->GetSignaturePath();
+    auto sigDir = sigPath.parent_path();
+    
+    // Load all .db files from the signatures directory
+    if (!sigDir.empty() && std::filesystem::is_directory(sigDir)) {
+        return m_signatureDb->LoadDirectory(sigDir);
+    }
+    
+    // Fallback: load single file
     return m_signatureDb->Load(sigPath);
 }
 
@@ -298,6 +331,15 @@ void Engine::ProcessFile(const FileInfo& fileInfo) {
     if (result.scanned) {
         m_stats.scannedFiles.fetch_add(1);
         m_stats.bytesScanned.fetch_add(fileInfo.size);
+        
+        // Invoke progress callback every 100 files for live updates
+        auto scanned = m_stats.scannedFiles.load();
+        if (scanned % 100 == 0) {
+            std::lock_guard<std::mutex> lock(m_callbackMutex);
+            if (m_progressCallback) {
+                m_progressCallback(m_stats);
+            }
+        }
     } else {
         m_stats.skippedFiles.fetch_add(1);
     }
@@ -331,7 +373,7 @@ ScanResult Engine::ScanFileContent(const FileInfo& fileInfo) {
     try {
         // Read file in chunks
         std::vector<uint8_t> buffer(constants::DEFAULT_CHUNK_SIZE);
-        auto bytesRead = m_scanner->ReadFile(fileInfo.path, buffer);
+        auto bytesRead = m_scanner->ReadFile(fileInfo.path, std::span<uint8_t>(buffer));
         
         if (bytesRead == 0) {
             result.errorMessage = "Failed to read file";
@@ -426,36 +468,73 @@ void Engine::OnScanComplete() {
 }
 
 std::vector<FilePath> Engine::GetQuickScanPaths() const {
-    // Common malware locations on Windows
+    // Quick scan targets: areas where malware commonly persists.
+    // Based on industry standard (Windows Defender, Kaspersky, Malwarebytes):
+    //   1. User-writable hotspots (Downloads, Desktop, Documents, Temp)
+    //   2. Startup/persistence locations (Startup folders, ProgramData)
+    //   3. System critical areas (System32\drivers, Prefetch, Windows\Temp)
+    //   4. Browser download and extension folders
     std::vector<FilePath> paths;
     
 #ifdef _WIN32
-    // User profile locations
+    // ── User profile locations (malware drop zones) ──
     char* userProfile = nullptr;
     size_t len = 0;
     if (_dupenv_s(&userProfile, &len, "USERPROFILE") == 0 && userProfile) {
-        paths.emplace_back(std::string(userProfile) + "\\Downloads");
-        paths.emplace_back(std::string(userProfile) + "\\Desktop");
-        paths.emplace_back(std::string(userProfile) + "\\AppData\\Local\\Temp");
-        paths.emplace_back(std::string(userProfile) + "\\AppData\\Roaming");
+        std::string up(userProfile);
+        paths.emplace_back(up + "\\Downloads");
+        paths.emplace_back(up + "\\Desktop");
+        paths.emplace_back(up + "\\Documents");
+        paths.emplace_back(up + "\\AppData\\Local\\Temp");
+        
+        // User startup folder (persistence vector)
+        paths.emplace_back(up + "\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup");
+        
+        // Browser extensions (can contain malicious extensions)
+        paths.emplace_back(up + "\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions");
+        paths.emplace_back(up + "\\AppData\\Local\\Microsoft\\Edge\\User Data\\Default\\Extensions");
+        
+        // Recent files
+        paths.emplace_back(up + "\\AppData\\Roaming\\Microsoft\\Windows\\Recent");
+        
         free(userProfile);
     }
     
-    // System temp
+    // ── Public folders (common malware drop) ──
+    paths.emplace_back("C:\\Users\\Public\\Downloads");
+    paths.emplace_back("C:\\Users\\Public\\Desktop");
+    
+    // ── System temp directories ──
     char* temp = nullptr;
     if (_dupenv_s(&temp, &len, "TEMP") == 0 && temp) {
         paths.emplace_back(temp);
         free(temp);
     }
+    paths.emplace_back("C:\\Windows\\Temp");
     
-    // Common startup locations
+    // ── Startup & persistence locations (targeted, NOT full ProgramData) ──
     paths.emplace_back("C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Startup");
+    
+    // ── System critical areas (small, fast to scan) ──
+    paths.emplace_back("C:\\Windows\\System32\\drivers");
+    paths.emplace_back("C:\\Windows\\System32\\Tasks");
+
+    // ── Remove non-existent paths ──
+    paths.erase(
+        std::remove_if(paths.begin(), paths.end(),
+            [](const FilePath& p) { return !std::filesystem::exists(p); }),
+        paths.end());
+    
 #else
     // Linux quick scan paths
     if (auto home = std::getenv("HOME")) {
         paths.emplace_back(std::string(home) + "/Downloads");
         paths.emplace_back(std::string(home) + "/Desktop");
+        paths.emplace_back(std::string(home) + "/Documents");
+        paths.emplace_back(std::string(home) + "/.local/share");
+        paths.emplace_back(std::string(home) + "/.config");
         paths.emplace_back("/tmp");
+        paths.emplace_back("/var/tmp");
     }
 #endif
     

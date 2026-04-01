@@ -9,6 +9,7 @@
 #pragma once
 
 #include <atomic>
+#include <cassert>
 #include <memory>
 #include <vector>
 #include <optional>

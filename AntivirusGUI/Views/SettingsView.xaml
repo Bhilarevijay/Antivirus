@@ -1,0 +1,115 @@
+<UserControl x:Class="AntivirusGUI.Views.SettingsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <StackPanel>
+        <!-- General -->
+        <Border Style="{StaticResource Card}" Margin="0,0,0,16">
+            <StackPanel>
+                <TextBlock Text="General" Style="{StaticResource H3}" Margin="0,0,0,16"/>
+
+                <Border Padding="0,12" BorderBrush="#10FFFFFF" BorderThickness="0,0,0,1">
+                    <Grid>
+                        <StackPanel>
+                            <TextBlock Text="Dark Mode" Foreground="{DynamicResource TextPrimaryBrush}"
+                                       FontFamily="{StaticResource DefaultFont}" FontSize="14" FontWeight="SemiBold"/>
+                            <TextBlock Text="Use dark theme" Style="{StaticResource Caption}"/>
+                        </StackPanel>
+                        <ToggleButton Style="{StaticResource ToggleSwitch}" HorizontalAlignment="Right"
+                                      IsChecked="{Binding DarkMode}"/>
+                    </Grid>
+                </Border>
+
+                <Border Padding="0,12" BorderBrush="#10FFFFFF" BorderThickness="0,0,0,1">
+                    <Grid>
+                        <StackPanel>
+                            <TextBlock Text="Start with Windows" Foreground="{DynamicResource TextPrimaryBrush}"
+                                       FontFamily="{StaticResource DefaultFont}" FontSize="14" FontWeight="SemiBold"/>
+                            <TextBlock Text="Launch at system startup" Style="{StaticResource Caption}"/>
+                        </StackPanel>
+                        <ToggleButton Style="{StaticResource ToggleSwitch}" HorizontalAlignment="Right"
+                                      IsChecked="{Binding StartWithWindows}"/>
+                    </Grid>
+                </Border>
+
+                <Border Padding="0,12">
+                    <Grid>
+                        <StackPanel>
+                            <TextBlock Text="Minimize to Tray" Foreground="{DynamicResource TextPrimaryBrush}"
+                                       FontFamily="{StaticResource DefaultFont}" FontSize="14" FontWeight="SemiBold"/>
+                            <TextBlock Text="Minimize to system tray instead of taskbar" Style="{StaticResource Caption}"/>
+                        </StackPanel>
+                        <ToggleButton Style="{StaticResource ToggleSwitch}" HorizontalAlignment="Right"
+                                      IsChecked="{Binding MinimizeToTray}"/>
+                    </Grid>
+                </Border>
+            </StackPanel>
+        </Border>
+
+        <!-- Engine -->
+        <Border Style="{StaticResource Card}" Margin="0,0,0,16">
+            <StackPanel>
+                <TextBlock Text="Engine" Style="{StaticResource H3}" Margin="0,0,0,16"/>
+
+                <Border Padding="0,12" BorderBrush="#10FFFFFF" BorderThickness="0,0,0,1">
+                    <Grid>
+                        <StackPanel>
+                            <TextBlock Text="Auto Update Signatures" Foreground="{DynamicResource TextPrimaryBrush}"
+                                       FontFamily="{StaticResource DefaultFont}" FontSize="14" FontWeight="SemiBold"/>
+                            <TextBlock Text="Automatically download latest malware signatures" Style="{StaticResource Caption}"/>
+                        </StackPanel>
+                        <ToggleButton Style="{StaticResource ToggleSwitch}" HorizontalAlignment="Right"
+                                      IsChecked="{Binding AutoUpdate}"/>
+                    </Grid>
+                </Border>
+
+                <Border Padding="0,12">
+                    <Grid>
+                        <StackPanel>
+                            <TextBlock Text="Scan Threads" Foreground="{DynamicResource TextPrimaryBrush}"
+                                       FontFamily="{StaticResource DefaultFont}" FontSize="14" FontWeight="SemiBold"/>
+                            <TextBlock Style="{StaticResource Caption}">
+                                <Run Text="Number of threads for scanning: "/>
+                                <Run Text="{Binding ScanThreads}" FontWeight="SemiBold" Foreground="{DynamicResource AccentBrush}"/>
+                            </TextBlock>
+                        </StackPanel>
+                        <Slider HorizontalAlignment="Right" Width="200" Minimum="1" Maximum="32"
+                                Value="{Binding ScanThreads}" VerticalAlignment="Center"
+                                Foreground="{DynamicResource AccentBrush}"/>
+                    </Grid>
+                </Border>
+            </StackPanel>
+        </Border>
+
+        <!-- Exclusions -->
+        <Border Style="{StaticResource Card}">
+            <StackPanel>
+                <Grid Margin="0,0,0,12">
+                    <TextBlock Text="Exclusions" Style="{StaticResource H3}"/>
+                    <Button Content="Add Exclusion" Style="{StaticResource SecondaryButton}"
+                            HorizontalAlignment="Right" Padding="14,8"
+                            Command="{Binding AddExclusionCommand}"/>
+                </Grid>
+                <ItemsControl ItemsSource="{Binding Exclusions}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Padding="10,8" Margin="0,0,0,4" CornerRadius="6"
+                                    Background="{DynamicResource BgHoverBrush}">
+                                <Grid>
+                                    <TextBlock Text="{Binding}" Foreground="{DynamicResource TextPrimaryBrush}"
+                                               FontFamily="{StaticResource DefaultFont}" FontSize="13"
+                                               VerticalAlignment="Center"/>
+                                    <Button Content="✕" HorizontalAlignment="Right" FontSize="10"
+                                            Style="{StaticResource DangerButton}" Padding="8,4"
+                                            Command="{Binding DataContext.RemoveExclusionCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                            CommandParameter="{Binding}"/>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <TextBlock Text="No exclusions configured" Style="{StaticResource BodyText}"
+                           HorizontalAlignment="Center" Margin="0,12,0,0"/>
+            </StackPanel>
+        </Border>
+    </StackPanel>
+</UserControl>

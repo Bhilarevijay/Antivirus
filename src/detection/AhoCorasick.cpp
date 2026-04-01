@@ -32,14 +32,15 @@ void AhoCorasick::AddPattern(std::span<const uint8_t> pattern, size_t patternId)
     size_t current = 0;  // Start at root
     
     for (uint8_t byte : pattern) {
-        auto& node = m_nodes[current];
-        
-        auto it = node.children.find(byte);
-        if (it == node.children.end()) {
+        // Do NOT hold a reference to m_nodes[current] across emplace_back!
+        // emplace_back may reallocate the vector, invalidating all references.
+        auto it = m_nodes[current].children.find(byte);
+        if (it == m_nodes[current].children.end()) {
             // Create new node
             size_t newNode = m_nodes.size();
             m_nodes.emplace_back();
-            node.children[byte] = newNode;
+            // Access m_nodes[current] AFTER emplace_back via index, not reference
+            m_nodes[current].children[byte] = newNode;
             current = newNode;
         } else {
             current = it->second;

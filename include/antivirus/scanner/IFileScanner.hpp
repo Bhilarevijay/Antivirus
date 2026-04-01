@@ -8,6 +8,7 @@
 #include "antivirus/core/Types.hpp"
 #include <memory>
 #include <functional>
+#include <span>
 
 namespace antivirus {
 

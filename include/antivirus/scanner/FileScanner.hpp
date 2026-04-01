@@ -12,6 +12,7 @@
 #include "antivirus/logging/ILogger.hpp"
 
 #include <memory>
+#include <span>
 #include <unordered_set>
 
 #ifdef _WIN32

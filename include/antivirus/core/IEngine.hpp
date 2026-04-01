@@ -24,11 +24,11 @@ class IEngine {
 public:
     virtual ~IEngine() = default;
     
-    // Prevent copying, allow moving
+    // Non-copyable, non-movable (abstract base)
     IEngine(const IEngine&) = delete;
     IEngine& operator=(const IEngine&) = delete;
-    IEngine(IEngine&&) = default;
-    IEngine& operator=(IEngine&&) = default;
+    IEngine(IEngine&&) = delete;
+    IEngine& operator=(IEngine&&) = delete;
     
     // ========================================================================
     // Lifecycle Management

@@ -21,7 +21,11 @@ Logger::Logger(
 {
     // Open log file
     if (!logFile.empty()) {
-        std::filesystem::create_directories(logFile.parent_path());
+        auto parentPath = logFile.parent_path();
+        if (!parentPath.empty()) {
+            std::error_code ec;
+            std::filesystem::create_directories(parentPath, ec);
+        }
         m_fileStream.open(logFile, std::ios::app);
     }
     

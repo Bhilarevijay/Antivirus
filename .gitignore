@@ -1,0 +1,18 @@
+# Build outputs
+build/
+publish/
+.vs/
+Quarantine/
+
+# .NET build outputs
+AntivirusGUI/bin/
+AntivirusGUI/obj/
+
+# IDE
+*.user
+*.suo
+*.cache
+
+# OS
+Thumbs.db
+Desktop.ini

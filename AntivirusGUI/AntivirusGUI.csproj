@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <AssemblyTitle>Sentinel Antivirus</AssemblyTitle>
+    <Description>Production-Grade Antivirus Security Suite</Description>
+    <Version>1.0.0</Version>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <PackageReference Include="System.Management" Version="9.0.5" />
+    <PackageReference Include="System.ServiceProcess.ServiceController" Version="9.0.5" />
+  </ItemGroup>
+
+  <!-- Copy C++ engine next to GUI exe -->
+  <Target Name="CopyEngine" AfterTargets="Build">
+    <Copy SourceFiles="$(ProjectDir)..\build\bin\Release\antivirus.exe" DestinationFolder="$(OutputPath)" Condition="Exists('$(ProjectDir)..\build\bin\Release\antivirus.exe')" SkipUnchangedFiles="true" />
+    <ItemGroup>
+      <SignatureFiles Include="$(ProjectDir)..\signatures\**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(SignatureFiles)" DestinationFolder="$(OutputPath)signatures\%(RecursiveDir)" SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>

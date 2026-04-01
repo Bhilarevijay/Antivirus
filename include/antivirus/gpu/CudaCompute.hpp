@@ -1,9 +1,9 @@
 /**
  * @file CudaCompute.hpp
- * @brief CUDA-based GPU compute implementation (stub)
+ * @brief CUDA-based GPU compute implementation
  * 
- * Full CUDA implementation requires CUDA SDK. This header
- * defines the interface; implementation would be in .cu files.
+ * Provides GPU acceleration on any NVIDIA GPU (Maxwell sm_50+).
+ * Uses multi-architecture builds + PTX JIT for forward compatibility.
  */
 
 #pragma once
@@ -19,13 +19,17 @@ namespace antivirus {
  * @class CudaCompute
  * @brief NVIDIA CUDA-based implementation of IGpuCompute
  * 
- * Provides GPU acceleration on NVIDIA GPUs using CUDA.
- * Requires CUDA SDK and compatible GPU.
+ * Provides GPU acceleration on any NVIDIA GPU with compute capability >= 5.0.
+ * Automatically detects the best GPU device at runtime.
  */
 class CudaCompute final : public IGpuCompute {
 public:
     explicit CudaCompute(std::shared_ptr<ILogger> logger);
     ~CudaCompute() override;
+    
+    // Non-copyable, non-movable
+    CudaCompute(const CudaCompute&) = delete;
+    CudaCompute& operator=(const CudaCompute&) = delete;
     
     [[nodiscard]] bool IsAvailable() const noexcept override;
     [[nodiscard]] GpuInfo GetDeviceInfo() const override;
@@ -52,6 +56,7 @@ private:
     std::unique_ptr<Impl> m_impl;
     std::shared_ptr<ILogger> m_logger;
     bool m_available{false};
+    GpuInfo m_deviceInfo;
 };
 
 }  // namespace antivirus

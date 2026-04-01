@@ -8,6 +8,7 @@
 
 #ifdef HAS_CUDA
     #include "antivirus/gpu/CudaCompute.hpp"
+    #include <cuda_runtime.h>
 #endif
 
 namespace antivirus {

@@ -1,0 +1,163 @@
+<UserControl x:Class="AntivirusGUI.Views.ScanView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:views="clr-namespace:AntivirusGUI.Views">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
+        <views:ZeroToVisibilityConverter x:Key="ZeroToVisibility"/>
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Scan Mode Cards -->
+        <Border Grid.Row="0" Style="{StaticResource Card}" Margin="0,0,0,16">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Quick Scan -->
+                <Button Grid.Column="0" Command="{Binding StartQuickScanCommand}" Margin="0,0,8,0"
+                        Cursor="Hand" Background="Transparent" BorderThickness="0">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="CardBg" CornerRadius="10" Background="{DynamicResource BgHoverBrush}"
+                                    Padding="20">
+                                <StackPanel HorizontalAlignment="Center">
+                                    <TextBlock Text="&#xE8B5;" FontFamily="Segoe MDL2 Assets" FontSize="28"
+                                               Foreground="{DynamicResource AccentBrush}" HorizontalAlignment="Center" Margin="0,0,0,8"/>
+                                    <TextBlock Text="Quick Scan" Style="{StaticResource H3}" HorizontalAlignment="Center"/>
+                                    <TextBlock Text="Scans common locations" Style="{StaticResource Caption}" HorizontalAlignment="Center" Margin="0,4,0,0"/>
+                                </StackPanel>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="CardBg" Property="Background" Value="#201B9AAA"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                </Button>
+
+                <!-- Full Scan -->
+                <Button Grid.Column="1" Command="{Binding StartFullScanCommand}" Margin="4,0"
+                        Cursor="Hand" Background="Transparent" BorderThickness="0">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="CardBg" CornerRadius="10" Background="{DynamicResource BgHoverBrush}"
+                                    Padding="20">
+                                <StackPanel HorizontalAlignment="Center">
+                                    <TextBlock Text="&#xE74C;" FontFamily="Segoe MDL2 Assets" FontSize="28"
+                                               Foreground="{DynamicResource WarningBrush}" HorizontalAlignment="Center" Margin="0,0,0,8"/>
+                                    <TextBlock Text="Full Scan" Style="{StaticResource H3}" HorizontalAlignment="Center"/>
+                                    <TextBlock Text="Deep scan of all drives" Style="{StaticResource Caption}" HorizontalAlignment="Center" Margin="0,4,0,0"/>
+                                </StackPanel>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="CardBg" Property="Background" Value="#20F39C12"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                </Button>
+
+                <!-- Custom Scan -->
+                <Button Grid.Column="2" Command="{Binding StartCustomScanCommand}" Margin="8,0,0,0"
+                        Cursor="Hand" Background="Transparent" BorderThickness="0">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="CardBg" CornerRadius="10" Background="{DynamicResource BgHoverBrush}"
+                                    Padding="20">
+                                <StackPanel HorizontalAlignment="Center">
+                                    <TextBlock Text="&#xE838;" FontFamily="Segoe MDL2 Assets" FontSize="28"
+                                               Foreground="{DynamicResource InfoBrush}" HorizontalAlignment="Center" Margin="0,0,0,8"/>
+                                    <TextBlock Text="Custom Scan" Style="{StaticResource H3}" HorizontalAlignment="Center"/>
+                                    <TextBlock Text="Choose a folder" Style="{StaticResource Caption}" HorizontalAlignment="Center" Margin="0,4,0,0"/>
+                                </StackPanel>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="CardBg" Property="Background" Value="#203498DB"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                </Button>
+            </Grid>
+        </Border>
+
+        <!-- Progress Section -->
+        <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0,0,0,16">
+            <StackPanel>
+                <Grid Margin="0,0,0,12">
+                    <TextBlock Text="{Binding ScanStatus}" Style="{StaticResource H3}"/>
+                    <TextBlock Text="{Binding ScanProgress, StringFormat='{}{0:F0}%'}"
+                               Style="{StaticResource H3}" HorizontalAlignment="Right"
+                               Foreground="{DynamicResource AccentBrush}"/>
+                </Grid>
+                <ProgressBar Value="{Binding ScanProgress}" Maximum="100" Height="8"
+                             Style="{StaticResource AccentProgressBar}" Margin="0,0,0,12"/>
+                <Grid>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="Files: " Style="{StaticResource BodyText}"/>
+                        <TextBlock Text="{Binding FilesScanned}" Foreground="{DynamicResource TextPrimaryBrush}"
+                                   FontWeight="SemiBold" FontFamily="{StaticResource DefaultFont}"/>
+                        <TextBlock Text="  |  Threats: " Style="{StaticResource BodyText}" Margin="12,0,0,0"/>
+                        <TextBlock Text="{Binding ThreatsFound}" Foreground="{DynamicResource DangerBrush}"
+                                   FontWeight="SemiBold" FontFamily="{StaticResource DefaultFont}"/>
+                    </StackPanel>
+                    <Button Content="Stop Scan" Style="{StaticResource DangerButton}"
+                            Command="{Binding StopScanCommand}" HorizontalAlignment="Right"
+                            Padding="16,8" Visibility="{Binding IsScanning, Converter={StaticResource BoolToVisibility}}"/>
+                </Grid>
+                <TextBlock Text="{Binding CurrentFile}" Style="{StaticResource Caption}" Margin="0,8,0,0"
+                           TextTrimming="CharacterEllipsis"/>
+            </StackPanel>
+        </Border>
+
+        <!-- Results Table -->
+        <Border Grid.Row="2" Style="{StaticResource Card}">
+            <StackPanel>
+                <TextBlock Text="Scan Results" Style="{StaticResource H3}" Margin="0,0,0,12"/>
+                <ItemsControl ItemsSource="{Binding Threats}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Padding="12,10" Margin="0,0,0,4" CornerRadius="8"
+                                    Background="{DynamicResource BgHoverBrush}">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding FileName}" Foreground="{DynamicResource TextPrimaryBrush}"
+                                                   FontFamily="{StaticResource DefaultFont}" FontSize="13"/>
+                                        <TextBlock Text="{Binding ThreatName}" Style="{StaticResource Caption}"/>
+                                    </StackPanel>
+                                    <TextBlock Grid.Column="1" Text="{Binding Severity}"
+                                               Foreground="{DynamicResource DangerBrush}" VerticalAlignment="Center"
+                                               FontFamily="{StaticResource DefaultFont}" FontSize="12" Margin="0,0,16,0"/>
+                                    <TextBlock Grid.Column="2" Text="{Binding Action}"
+                                               Foreground="{DynamicResource SuccessBrush}" VerticalAlignment="Center"
+                                               FontFamily="{StaticResource DefaultFont}" FontSize="12"/>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <TextBlock Text="No threats found" Style="{StaticResource BodyText}" Margin="0,12,0,0"
+                           HorizontalAlignment="Center"
+                           Visibility="{Binding Threats.Count, Converter={StaticResource ZeroToVisibility}}"/>
+            </StackPanel>
+        </Border>
+    </Grid>
+</UserControl>

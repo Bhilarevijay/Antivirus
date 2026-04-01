@@ -1,0 +1,90 @@
+<UserControl x:Class="AntivirusGUI.Views.ProtectionView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <StackPanel>
+        <!-- Master Switch -->
+        <Border Style="{StaticResource Card}" Margin="0,0,0,16">
+            <Grid>
+                <StackPanel>
+                    <TextBlock Text="Antivirus Protection" Style="{StaticResource H2}" Margin="0,0,0,4"/>
+                    <TextBlock Text="Real-time protection monitors your system for threats" Style="{StaticResource BodyText}"/>
+                </StackPanel>
+                <ToggleButton Style="{StaticResource ToggleSwitch}" HorizontalAlignment="Right"
+                              VerticalAlignment="Center" IsChecked="{Binding RealTimeProtection}"/>
+            </Grid>
+        </Border>
+
+        <!-- Protection Features -->
+        <Border Style="{StaticResource Card}" Margin="0,0,0,16">
+            <StackPanel>
+                <TextBlock Text="Protection Features" Style="{StaticResource H3}" Margin="0,0,0,16"/>
+
+                <!-- Auto Quarantine -->
+                <Border Padding="0,12" BorderBrush="#10FFFFFF" BorderThickness="0,0,0,1">
+                    <Grid>
+                        <StackPanel>
+                            <TextBlock Text="Auto Quarantine" Foreground="{DynamicResource TextPrimaryBrush}"
+                                       FontFamily="{StaticResource DefaultFont}" FontSize="14" FontWeight="SemiBold"/>
+                            <TextBlock Text="Automatically quarantine detected threats" Style="{StaticResource Caption}"/>
+                        </StackPanel>
+                        <ToggleButton Style="{StaticResource ToggleSwitch}" HorizontalAlignment="Right"
+                                      IsChecked="{Binding AutoQuarantine}"/>
+                    </Grid>
+                </Border>
+
+                <!-- Scan Downloads -->
+                <Border Padding="0,12" BorderBrush="#10FFFFFF" BorderThickness="0,0,0,1">
+                    <Grid>
+                        <StackPanel>
+                            <TextBlock Text="Scan Downloads" Foreground="{DynamicResource TextPrimaryBrush}"
+                                       FontFamily="{StaticResource DefaultFont}" FontSize="14" FontWeight="SemiBold"/>
+                            <TextBlock Text="Scan files when downloaded from the internet" Style="{StaticResource Caption}"/>
+                        </StackPanel>
+                        <ToggleButton Style="{StaticResource ToggleSwitch}" HorizontalAlignment="Right"
+                                      IsChecked="{Binding ScanDownloads}"/>
+                    </Grid>
+                </Border>
+
+                <!-- Scan USB -->
+                <Border Padding="0,12" BorderBrush="#10FFFFFF" BorderThickness="0,0,0,1">
+                    <Grid>
+                        <StackPanel>
+                            <TextBlock Text="Scan USB Devices" Foreground="{DynamicResource TextPrimaryBrush}"
+                                       FontFamily="{StaticResource DefaultFont}" FontSize="14" FontWeight="SemiBold"/>
+                            <TextBlock Text="Automatically scan USB drives on insertion" Style="{StaticResource Caption}"/>
+                        </StackPanel>
+                        <ToggleButton Style="{StaticResource ToggleSwitch}" HorizontalAlignment="Right"
+                                      IsChecked="{Binding ScanUsb}"/>
+                    </Grid>
+                </Border>
+
+                <!-- Cloud Lookup -->
+                <Border Padding="0,12">
+                    <Grid>
+                        <StackPanel>
+                            <TextBlock Text="Cloud Lookup" Foreground="{DynamicResource TextPrimaryBrush}"
+                                       FontFamily="{StaticResource DefaultFont}" FontSize="14" FontWeight="SemiBold"/>
+                            <TextBlock Text="Check suspicious files against cloud threat database" Style="{StaticResource Caption}"/>
+                        </StackPanel>
+                        <ToggleButton Style="{StaticResource ToggleSwitch}" HorizontalAlignment="Right"
+                                      IsChecked="{Binding CloudLookup}"/>
+                    </Grid>
+                </Border>
+            </StackPanel>
+        </Border>
+
+        <!-- Engine Status -->
+        <Border Style="{StaticResource Card}">
+            <Grid>
+                <StackPanel>
+                    <TextBlock Text="Engine Status" Style="{StaticResource H3}" Margin="0,0,0,8"/>
+                    <StackPanel Orientation="Horizontal">
+                        <Ellipse Width="10" Height="10" Fill="{DynamicResource SuccessBrush}" Margin="0,0,8,0"/>
+                        <TextBlock Text="{Binding EngineStatus}" Foreground="{DynamicResource SuccessBrush}"
+                                   FontFamily="{StaticResource DefaultFont}" FontSize="14" FontWeight="SemiBold"/>
+                    </StackPanel>
+                </StackPanel>
+            </Grid>
+        </Border>
+    </StackPanel>
+</UserControl>

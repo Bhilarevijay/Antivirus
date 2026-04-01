@@ -145,6 +145,7 @@ private:
     std::condition_variable m_pauseCondition;
     std::mutex m_pauseMutex;
     std::atomic<bool> m_paused{false};
+    std::atomic<bool> m_cancelledToken{false};
 };
 
 /**

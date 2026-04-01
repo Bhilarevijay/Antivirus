@@ -15,26 +15,49 @@
 #include "antivirus/config/ConfigManager.hpp"
 #include "antivirus/logging/Logger.hpp"
 #include "antivirus/gpu/GpuComputeFactory.hpp"
+#include "antivirus/detection/SignatureUpdater.hpp"
 
 #include <iostream>
 #include <string>
 #include <vector>
 
+#ifdef _WIN32
+    #include <Windows.h>
+#endif
+
 namespace av = antivirus;
 
+/**
+ * @brief Get the directory containing the running executable
+ * @return Absolute path to the executable's directory
+ */
+std::filesystem::path GetExecutableDir() {
+#ifdef _WIN32
+    wchar_t path[MAX_PATH];
+    DWORD len = GetModuleFileNameW(nullptr, path, MAX_PATH);
+    if (len > 0 && len < MAX_PATH) {
+        return std::filesystem::path(path).parent_path();
+    }
+#endif
+    // Fallback to current directory
+    return std::filesystem::current_path();
+}
+
 void PrintUsage(const char* programName) {
-    std::cout << "High-Performance Antivirus Scanner\n"
-              << "===================================\n\n"
+    std::cout << "High-Performance Antivirus Scanner v1.0.0\n"
+              << "==========================================\n\n"
               << "Usage: " << programName << " [command] [options]\n\n"
               << "Commands:\n"
               << "  scan <path>      Scan specified path\n"
               << "  quick            Quick scan (common malware locations)\n"
               << "  full             Full system scan\n"
+              << "  update           Update signatures from online sources\n"
               << "  quarantine       Manage quarantined files\n"
               << "    list           List quarantined files\n"
               << "    restore <id>   Restore file by ID\n"
               << "    delete <id>    Delete file by ID\n"
               << "  status           Show engine status\n"
+              << "  version          Show version info\n"
               << "  help             Show this help\n\n"
               << "Options:\n"
               << "  -t, --threads N  Number of threads to use\n"
@@ -54,18 +77,32 @@ void PrintProgress(const av::ScanStatistics& stats) {
 class AntivirusApp {
 public:
     AntivirusApp() {
+        // Resolve all resource paths relative to the executable
+        auto exeDir = GetExecutableDir();
+        auto configPath = exeDir / "config.json";
+        auto sigPath = exeDir / "signatures" / "malware_signatures.db";
+        auto quarantinePath = exeDir / "Quarantine";
+        auto logPath = exeDir / "logs" / "antivirus.log";
+        
         // Initialize components
-        m_logger = av::CreateConsoleLogger();
-        m_config = std::make_shared<av::ConfigManager>("config.json");
+        m_logger = av::CreateFileLogger(logPath);
+        m_config = std::make_shared<av::ConfigManager>(configPath);
+        
+        // Override config paths with exe-relative ones
+        m_config->SetSignaturePath(sigPath);
+        m_config->SetQuarantinePath(quarantinePath);
+        m_config->SetLogPath(logPath);
+        
         m_threadPool = av::CreateOptimalThreadPool();
         m_scanner = std::make_shared<av::FileScanner>(m_logger);
         m_signatureDb = std::make_shared<av::SignatureDatabase>(m_logger);
         m_hashEngine = std::make_shared<av::HashEngine>();
         m_patternMatcher = std::make_shared<av::PatternMatcher>();
         m_quarantine = std::make_shared<av::QuarantineManager>(
-            m_config->GetQuarantinePath(), m_logger
+            quarantinePath, m_logger
         );
-        m_gpuCompute = av::GpuComputeFactory::CreateCpuFallback(m_logger);
+        // Auto-detect GPU: uses CUDA if NVIDIA GPU available, falls back to CPU
+        m_gpuCompute = av::GpuComputeFactory::Create(m_logger);
         
         // Build engine
         m_engine = av::EngineBuilder()
@@ -165,6 +202,17 @@ public:
         std::cout << "Ready: " << (m_engine->IsReady() ? "Yes" : "No") << '\n';
         std::cout << "Signatures loaded: " << m_engine->GetSignatureCount() << '\n';
         std::cout << "Thread pool threads: " << m_threadPool->GetThreadCount() << '\n';
+        
+        // GPU info
+        auto gpuInfo = m_gpuCompute->GetDeviceInfo();
+        if (gpuInfo.available && gpuInfo.backend != av::GpuBackend::None) {
+            std::cout << "GPU: " << gpuInfo.name 
+                      << " (" << gpuInfo.totalMemory / (1024*1024) << " MB)\n";
+            std::cout << "GPU Backend: CUDA\n";
+        } else {
+            std::cout << "GPU: CPU fallback (no CUDA GPU detected)\n";
+        }
+        
         std::cout << "Quarantined files: " << m_quarantine->GetEntryCount() << '\n';
         std::cout << "Quarantine size: " << m_quarantine->GetTotalSize() << " bytes\n";
     }
@@ -255,6 +303,32 @@ int main(int argc, char* argv[]) {
         }
         else if (command == "status") {
             app.ShowStatus();
+        }
+        else if (command == "update") {
+            std::cout << "Updating malware signatures...\n";
+            auto exeDir = GetExecutableDir();
+            auto sigDir = exeDir / "signatures";
+            av::SignatureUpdater updater(
+                av::CreateConsoleLogger(), sigDir
+            );
+            auto stats = updater.UpdateFromMalwareBazaar(
+                [](size_t downloaded, size_t /*total*/) {
+                    std::cout << "\rDownloaded " << downloaded << " bytes..." << std::flush;
+                }
+            );
+            std::cout << "\n";
+            if (stats.success) {
+                std::cout << "Update complete: " << stats.newSignatures << " new signatures added\n";
+            } else {
+                std::cerr << "Update failed: " << stats.errorMessage << "\n";
+                return 1;
+            }
+        }
+        else if (command == "version") {
+            std::cout << "High-Performance Antivirus Scanner\n"
+                      << "Version: 1.0.0\n"
+                      << "Build: MSVC C++20 x64\n"
+                      << "Engine: Multi-threaded with SIMD acceleration\n";
         }
         else if (command == "help" || command == "-h" || command == "--help") {
             PrintUsage(argv[0]);
