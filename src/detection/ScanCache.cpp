@@ -152,6 +152,64 @@ bool ScanCache::CanSkipFile(
     return false;
 }
 
+bool ScanCache::CanSkipFileWithHash(
+    const FilePath& path,
+    uint64_t currentSize,
+    int64_t currentModTimeEpoch,
+    const std::string& currentSha256Hex
+) const {
+    std::shared_lock lock(m_mutex);
+    
+    auto normalPath = NormalizePath(path);
+    auto it = m_entries.find(normalPath);
+    
+    if (it == m_entries.end()) {
+        return false;  // Not in cache → must scan
+    }
+    
+    const auto& entry = it->second;
+    
+    // If the file was infected last time, always re-scan
+    if (!entry.wasClean) {
+        return false;
+    }
+    
+    // First check: size must match
+    if (entry.fileSize != currentSize) {
+        return false;  // Different size → definitely modified
+    }
+    
+    // Second check: SHA-256 hash must match (catches timestamp fakery)
+    if (!currentSha256Hex.empty() && !entry.sha256Hex.empty()) {
+        if (entry.sha256Hex != currentSha256Hex) {
+            // Hash mismatch! File content changed even though size is same.
+            // This catches timestamp tampering attacks.
+            m_hashMismatches.fetch_add(1, std::memory_order_relaxed);
+            return false;
+        }
+        // Hash matches → file content is genuinely unchanged
+        m_cacheHits.fetch_add(1, std::memory_order_relaxed);
+        return true;
+    }
+    
+    // Fallback: size + mtime check (if hash not provided)
+    if (entry.lastModifiedEpoch == currentModTimeEpoch) {
+        m_cacheHits.fetch_add(1, std::memory_order_relaxed);
+        return true;
+    }
+    
+    return false;
+}
+
+std::string ScanCache::GetCachedHash(const FilePath& path) const {
+    std::shared_lock lock(m_mutex);
+    auto it = m_entries.find(NormalizePath(path));
+    if (it != m_entries.end()) {
+        return it->second.sha256Hex;
+    }
+    return "";
+}
+
 void ScanCache::UpdateEntry(
     const FilePath& path,
     uint64_t fileSize,

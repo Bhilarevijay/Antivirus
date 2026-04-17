@@ -445,6 +445,26 @@ ScanResult Engine::ScanFileContent(const FileInfo& fileInfo) {
         // Compute hashes
         auto sha256 = m_hashEngine->ComputeSHA256(buffer);
         
+        // Hash-based cache verification:
+        // Even though size+mtime check passed in OnFileEnumerated (or this is a new file),
+        // compare the computed hash with the cached hash to detect content changes.
+        if (m_scanCache) {
+            auto cachedHash = m_scanCache->GetCachedHash(fileInfo.path);
+            auto currentHash = HashEngine::HashToHex(sha256);
+            if (!cachedHash.empty() && cachedHash == currentHash) {
+                // Hash matches cached value → file content truly unchanged
+                auto modTime = std::chrono::duration_cast<std::chrono::seconds>(
+                    fileInfo.lastModified.time_since_epoch()
+                ).count();
+                if (m_scanCache->CanSkipFileWithHash(fileInfo.path, fileInfo.size, modTime, currentHash)) {
+                    result.scanned = true;
+                    // Update cache entry (refreshes mtime in case it changed)
+                    m_scanCache->UpdateEntry(fileInfo.path, fileInfo.size, modTime, currentHash, true);
+                    return result;  // Skip expensive pattern+YARA scanning
+                }
+            }
+        }
+        
         // Check bloom filter first (quick rejection)
         if (m_signatureDb->MayMatchHash(sha256, HashType::SHA256)) {
             // Full lookup
@@ -570,6 +590,10 @@ void Engine::OnScanComplete() {
         m_scanCache->Save();
         m_logger->Info("Scan cache: {} files cached, {} cache hits (skipped)",
             m_scanCache->GetEntryCount(), m_scanCache->GetCacheHits());
+        auto mismatches = m_scanCache->GetHashMismatches();
+        if (mismatches > 0) {
+            m_logger->Warn("Scan cache: {} hash mismatches detected (possible file tampering)", mismatches);
+        }
     }
     
     if (m_state.load() != ScanState::Cancelled) {

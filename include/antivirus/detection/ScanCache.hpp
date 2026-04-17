@@ -86,6 +86,31 @@ public:
     ) const;
     
     /**
+     * @brief Check if file can be skipped using hash verification
+     * 
+     * More thorough than CanSkipFile — compares the SHA-256 hash
+     * to detect modifications even when timestamps are faked.
+     * 
+     * @param path File path
+     * @param currentSize Current file size
+     * @param currentModTimeEpoch Current last-modified time
+     * @param currentSha256Hex Current SHA-256 hash (computed by caller)
+     * @return true if file content matches cached hash → safe to skip
+     */
+    [[nodiscard]] bool CanSkipFileWithHash(
+        const FilePath& path,
+        uint64_t currentSize,
+        int64_t currentModTimeEpoch,
+        const std::string& currentSha256Hex
+    ) const;
+    
+    /**
+     * @brief Get the cached SHA-256 hash for a file
+     * @return Empty string if file not in cache
+     */
+    [[nodiscard]] std::string GetCachedHash(const FilePath& path) const;
+    
+    /**
      * @brief Update cache entry after scanning a file
      * @param path File path
      * @param fileSize File size
@@ -120,6 +145,11 @@ public:
      * @brief Get number of files skipped due to cache hits this session
      */
     [[nodiscard]] uint64_t GetCacheHits() const noexcept { return m_cacheHits.load(); }
+    
+    /**
+     * @brief Get number of hash mismatches (possible tampering detected)
+     */
+    [[nodiscard]] uint64_t GetHashMismatches() const noexcept { return m_hashMismatches.load(); }
 
 private:
     [[nodiscard]] std::string NormalizePath(const FilePath& path) const;
@@ -131,6 +161,7 @@ private:
     std::unordered_map<std::string, CachedFileEntry> m_entries;
     
     mutable std::atomic<uint64_t> m_cacheHits{0};
+    mutable std::atomic<uint64_t> m_hashMismatches{0};
     
     static constexpr uint32_t CACHE_VERSION = 1;
 };
