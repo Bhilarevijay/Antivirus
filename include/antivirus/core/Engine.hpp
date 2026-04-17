@@ -14,6 +14,10 @@
 #include "antivirus/detection/SignatureDatabase.hpp"
 #include "antivirus/detection/HashEngine.hpp"
 #include "antivirus/detection/PatternMatcher.hpp"
+#include "antivirus/detection/ScanCache.hpp"
+#ifdef HAS_YARA
+#include "antivirus/detection/YaraEngine.hpp"
+#endif
 #include "antivirus/quarantine/IQuarantineManager.hpp"
 #include "antivirus/logging/ILogger.hpp"
 #include "antivirus/config/IConfigManager.hpp"
@@ -112,6 +116,10 @@ private:
     std::shared_ptr<ILogger> m_logger;
     std::shared_ptr<IConfigManager> m_config;
     std::shared_ptr<IGpuCompute> m_gpuCompute;
+    std::shared_ptr<ScanCache> m_scanCache;
+#ifdef HAS_YARA
+    std::shared_ptr<YaraEngine> m_yaraEngine;
+#endif
     
     // ========================================================================
     // State

@@ -56,6 +56,16 @@ if(WIN32)
     )
 endif()
 
+# ── YARA Rule Engine ──
+find_package(unofficial-libyara CONFIG QUIET)
+if(unofficial-libyara_FOUND)
+    target_link_libraries(antivirus unofficial::libyara::libyara)
+    target_compile_definitions(antivirus PRIVATE HAS_YARA)
+    message(STATUS "YARA enabled: libyara found via vcpkg")
+else()
+    message(STATUS "YARA not found — building without YARA rule support")
+endif()
+
 # Enable SIMD optimizations (CXX only, not CUDA)
 if(MSVC)
     target_compile_options(antivirus PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/arch:AVX2>)
@@ -126,3 +136,14 @@ add_custom_command(TARGET antivirus POST_BUILD
         "$<TARGET_FILE_DIR:antivirus>/signatures"
     COMMENT "Copying signature database to output directory"
 )
+
+# Copy YARA rules to build output directory
+if(EXISTS "${CMAKE_SOURCE_DIR}/rules")
+    add_custom_command(TARGET antivirus POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:antivirus>/rules"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_SOURCE_DIR}/rules"
+            "$<TARGET_FILE_DIR:antivirus>/rules"
+        COMMENT "Copying YARA rules to output directory"
+    )
+endif()

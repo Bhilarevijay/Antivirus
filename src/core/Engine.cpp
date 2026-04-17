@@ -4,6 +4,7 @@
  */
 
 #include "antivirus/core/Engine.hpp"
+#include "antivirus/detection/ScanCache.hpp"
 #include <algorithm>
 #include <iostream>
 #include <span>
@@ -68,6 +69,50 @@ bool Engine::Initialize() {
     } catch (const std::exception& e) {
         m_logger->Warn("Failed to load signature database: {}", e.what());
     }
+    
+    // Initialize scan cache (persists between sessions)
+    try {
+        auto exeDir = std::filesystem::path(".");
+#ifdef _WIN32
+        wchar_t exePath[MAX_PATH];
+        if (GetModuleFileNameW(nullptr, exePath, MAX_PATH) > 0) {
+            exeDir = std::filesystem::path(exePath).parent_path();
+        }
+#endif
+        auto cachePath = exeDir / "scan_cache.dat";
+        m_scanCache = std::make_shared<ScanCache>(cachePath, m_logger);
+        auto cacheEntries = m_scanCache->Load();
+        m_logger->Info("Scan cache: {} file entries loaded", cacheEntries);
+    } catch (const std::exception& e) {
+        m_logger->Warn("Failed to load scan cache: {}", e.what());
+    }
+    
+    // Initialize YARA rule engine
+#ifdef HAS_YARA
+    try {
+        m_yaraEngine = std::make_shared<YaraEngine>(m_logger);
+        if (m_yaraEngine->Initialize()) {
+            auto exeDir2 = std::filesystem::path(".");
+#ifdef _WIN32
+            wchar_t ep[MAX_PATH];
+            if (GetModuleFileNameW(nullptr, ep, MAX_PATH) > 0) {
+                exeDir2 = std::filesystem::path(ep).parent_path();
+            }
+#endif
+            auto rulesDir = exeDir2 / "rules";
+            auto rulesLoaded = m_yaraEngine->LoadRulesFromDirectory(rulesDir);
+            if (rulesLoaded > 0) {
+                m_yaraEngine->CompileRules();
+                m_logger->Info("YARA: {} rules compiled from {} files",
+                    m_yaraEngine->GetRuleCount(), rulesLoaded);
+            } else {
+                m_logger->Info("YARA: No rule files found in {}", rulesDir.string());
+            }
+        }
+    } catch (const std::exception& e) {
+        m_logger->Warn("YARA init failed: {}", e.what());
+    }
+#endif
     
     m_logger->Info("Engine initialized with {} signatures", 
         m_signatureDb->GetSignatureCount());
@@ -305,6 +350,20 @@ void Engine::SetState(ScanState newState) {
 void Engine::OnFileEnumerated(const FileInfo& fileInfo) {
     m_stats.totalFiles.fetch_add(1);
     
+    // Check scan cache — skip if file is unchanged since last clean scan
+    if (m_scanCache) {
+        auto modTime = std::chrono::duration_cast<std::chrono::seconds>(
+            fileInfo.lastModified.time_since_epoch()
+        ).count();
+        
+        if (m_scanCache->CanSkipFile(fileInfo.path, fileInfo.size, modTime)) {
+            // File unchanged since last clean scan → skip
+            m_stats.scannedFiles.fetch_add(1);
+            m_stats.skippedFiles.fetch_add(1);
+            return;
+        }
+    }
+    
     // Submit to thread pool for scanning
     m_threadPool->Submit([this, fileInfo]() {
         ProcessFile(fileInfo);
@@ -421,7 +480,39 @@ ScanResult Engine::ScanFileContent(const FileInfo& fileInfo) {
             }
         }
         
+        // YARA rule scanning (if no threat detected yet by hash/pattern)
+#ifdef HAS_YARA
+        if (!result.threatDetected && m_yaraEngine && m_yaraEngine->IsReady()) {
+            auto yaraMatches = m_yaraEngine->ScanBuffer(buffer);
+            if (!yaraMatches.empty()) {
+                const auto& ym = yaraMatches[0];
+                result.threatDetected = true;
+                result.threat = ThreatInfo{
+                    "YARA:" + ym.ruleName,
+                    ym.ruleName,
+                    ym.description.empty() ? "Matched YARA rule" : ym.description,
+                    ym.level,
+                    HashType::SHA256,
+                    "",
+                    ym.matchedStrings.empty() ? 0 : ym.matchedStrings[0].second
+                };
+            }
+        }
+#endif
+        
         result.scanned = true;
+        
+        // Update scan cache with this file's result
+        if (m_scanCache) {
+            auto modTime = std::chrono::duration_cast<std::chrono::seconds>(
+                fileInfo.lastModified.time_since_epoch()
+            ).count();
+            auto sha256Hex = HashEngine::HashToHex(sha256);
+            m_scanCache->UpdateEntry(
+                fileInfo.path, fileInfo.size, modTime,
+                sha256Hex, !result.threatDetected
+            );
+        }
         
     } catch (const std::exception& e) {
         result.errorMessage = e.what();
@@ -456,6 +547,13 @@ void Engine::HandleThreat(const FileInfo& fileInfo, const ThreatInfo& threat) {
 
 void Engine::OnScanComplete() {
     m_stats.endTime = std::chrono::system_clock::now();
+    
+    // Save scan cache to disk (persists for next session)
+    if (m_scanCache) {
+        m_scanCache->Save();
+        m_logger->Info("Scan cache: {} files cached, {} cache hits (skipped)",
+            m_scanCache->GetEntryCount(), m_scanCache->GetCacheHits());
+    }
     
     if (m_state.load() != ScanState::Cancelled) {
         SetState(ScanState::Completed);
