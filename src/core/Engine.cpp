@@ -442,8 +442,23 @@ ScanResult Engine::ScanFileContent(const FileInfo& fileInfo) {
         
         buffer.resize(bytesRead);
         
-        // Compute hashes
-        auto sha256 = m_hashEngine->ComputeSHA256(buffer);
+        // Compute SHA-256 hash — use GPU if available, otherwise CPU
+        SHA256Hash sha256;
+        if (m_gpuCompute && m_gpuCompute->IsAvailable() && 
+            m_gpuCompute->GetBackend() != GpuBackend::None) {
+            // GPU-accelerated SHA-256
+            std::vector<std::span<const uint8_t>> batch = { 
+                std::span<const uint8_t>(buffer.data(), buffer.size()) 
+            };
+            auto gpuHashes = m_gpuCompute->ComputeSHA256Batch(batch);
+            if (!gpuHashes.empty()) {
+                sha256 = gpuHashes[0];
+            } else {
+                sha256 = m_hashEngine->ComputeSHA256(buffer);
+            }
+        } else {
+            sha256 = m_hashEngine->ComputeSHA256(buffer);
+        }
         
         // Hash-based cache verification:
         // Even though size+mtime check passed in OnFileEnumerated (or this is a new file),
