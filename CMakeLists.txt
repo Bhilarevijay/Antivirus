@@ -78,6 +78,10 @@ endif()
 option(ENABLE_CUDA "Enable CUDA GPU acceleration" OFF)
 
 if(ENABLE_CUDA)
+    # CUDA 13.1 officially supports VS 2019-2022.
+    # VS 18 (2026) needs --allow-unsupported-compiler to bypass the version check.
+    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --allow-unsupported-compiler")
+
     # Find CUDA toolkit
     include(CheckLanguage)
     check_language(CUDA)
@@ -92,7 +96,6 @@ if(ENABLE_CUDA)
         # sm_89  = Ada       (RTX 4000 series, 2022+)
         # sm_90  = Hopper    (H100, 2023+)
         # sm_100 = Blackwell (RTX 5000/B200, 2025+)
-        # sm_120 = Future architectures
         set(CMAKE_CUDA_ARCHITECTURES 75 80 86 89 90 100)
         
         enable_language(CUDA)
