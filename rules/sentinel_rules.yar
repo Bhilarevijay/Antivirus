@@ -1,9 +1,6 @@
 /*
  * Sentinel Antivirus - Default YARA Rules
  * These rules detect common malware patterns and suspicious behaviors.
- * 
- * Note: Rules should have LOW false positive rates.
- * Avoid flagging legitimate files (e.g., all PE executables).
  */
 
 rule EICAR_Test_File
@@ -18,26 +15,6 @@ rule EICAR_Test_File
 
     condition:
         $eicar at 0
-}
-
-rule Suspicious_PowerShell_Dropper
-{
-    meta:
-        description = "Detects PowerShell download cradles with hidden execution"
-        author = "Sentinel AV"
-        threat_level = 3
-
-    strings:
-        $iex = "Invoke-Expression" nocase
-        $dl1 = "DownloadString" nocase
-        $dl2 = "DownloadFile" nocase
-        $wc  = "Net.WebClient" nocase
-        $hidden = "-WindowStyle Hidden" nocase
-        $bypass = "-ExecutionPolicy Bypass" nocase
-        $encoded = "-EncodedCommand" nocase
-
-    condition:
-        ($iex and ($dl1 or $dl2 or $wc)) and ($hidden or $bypass or $encoded)
 }
 
 rule Ransomware_Note_Indicators
@@ -63,13 +40,12 @@ rule Ransomware_Note_Indicators
 rule Shadow_Copy_Deletion
 {
     meta:
-        description = "Detects scripts that delete Volume Shadow Copies (ransomware behavior)"
+        description = "Detects scripts that delete Volume Shadow Copies"
         author = "Sentinel AV"
         threat_level = 4
 
     strings:
         $del_shadow = "vssadmin delete shadows" nocase
-        $del_shadow2 = "vssadmin.exe delete shadows" nocase
         $wmic_shadow = "wmic shadowcopy delete" nocase
         $bcdedit = "bcdedit /set {default} recoveryenabled No" nocase
 
@@ -148,4 +124,23 @@ rule Packed_UPX_Executable
 
     condition:
         $mz at 0 and 2 of ($upx*)
+}
+
+rule Suspicious_Encoded_PowerShell
+{
+    meta:
+        description = "Detects encoded PowerShell commands used to evade detection"
+        author = "Sentinel AV"
+        threat_level = 3
+
+    strings:
+        $ps = "powershell" nocase
+        $enc1 = "-EncodedCommand" nocase
+        $enc2 = "-enc " nocase
+        $enc3 = "-e " nocase
+        $hidden = "-WindowStyle Hidden" nocase
+        $bypass = "-ExecutionPolicy Bypass" nocase
+
+    condition:
+        $ps and ($enc1 or $enc2 or $enc3) and ($hidden or $bypass)
 }

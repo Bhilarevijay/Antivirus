@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <iostream>
 #include <span>
+#include <unordered_set>
 
 #ifdef _WIN32
     #include <Windows.h>
@@ -483,6 +484,21 @@ ScanResult Engine::ScanFileContent(const FileInfo& fileInfo) {
         // YARA rule scanning (if no threat detected yet by hash/pattern)
 #ifdef HAS_YARA
         if (!result.threatDetected && m_yaraEngine && m_yaraEngine->IsReady()) {
+            // Only YARA-scan file types that are commonly malicious
+            auto ext = fileInfo.path.extension().string();
+            std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+            static const std::unordered_set<std::string> yaraExts = {
+                ".exe", ".dll", ".sys", ".drv", ".ocx", ".scr", ".com",  // PE binaries
+                ".bat", ".cmd", ".ps1", ".vbs", ".vbe", ".js", ".jse",   // Scripts
+                ".wsf", ".wsh", ".hta", ".msi", ".msp",                  // Installers/scripts
+                ".doc", ".docx", ".docm", ".xls", ".xlsx", ".xlsm",      // Office (macros)
+                ".ppt", ".pptx", ".pptm", ".rtf",                        // Office (macros)
+                ".php", ".asp", ".aspx", ".jsp", ".cgi",                  // Web scripts
+                ".py", ".rb", ".pl",                                      // Scripting langs
+                ".zip", ".rar", ".7z", ".cab", ".iso",                   // Archives
+                ".lnk", ".inf", ".reg",                                   // System files
+            };
+            if (yaraExts.count(ext)) {
             auto yaraMatches = m_yaraEngine->ScanBuffer(buffer);
             if (!yaraMatches.empty()) {
                 const auto& ym = yaraMatches[0];
@@ -497,6 +513,7 @@ ScanResult Engine::ScanFileContent(const FileInfo& fileInfo) {
                     ym.matchedStrings.empty() ? 0 : ym.matchedStrings[0].second
                 };
             }
+            } // end if yaraExts
         }
 #endif
         
