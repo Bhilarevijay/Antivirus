@@ -132,7 +132,7 @@ bool ScanCache::CanSkipFile(
     auto it = m_entries.find(normalPath);
     
     if (it == m_entries.end()) {
-        return false;  // Not in cache → must scan
+        return false;  // Not in cache â†’ must scan
     }
     
     const auto& entry = it->second;
@@ -145,10 +145,10 @@ bool ScanCache::CanSkipFile(
     // Fast metadata check: size + mtime
     if (entry.fileSize == currentSize && entry.lastModifiedEpoch == currentModTimeEpoch) {
         m_cacheHits.fetch_add(1, std::memory_order_relaxed);
-        return true;  // File unchanged → skip
+        return true;  // File unchanged â†’ skip
     }
     
-    // Metadata differs → file was modified → must re-scan
+    // Metadata differs â†’ file was modified â†’ must re-scan
     return false;
 }
 
@@ -164,7 +164,7 @@ bool ScanCache::CanSkipFileWithHash(
     auto it = m_entries.find(normalPath);
     
     if (it == m_entries.end()) {
-        return false;  // Not in cache → must scan
+        return false;  // Not in cache â†’ must scan
     }
     
     const auto& entry = it->second;
@@ -176,7 +176,7 @@ bool ScanCache::CanSkipFileWithHash(
     
     // First check: size must match
     if (entry.fileSize != currentSize) {
-        return false;  // Different size → definitely modified
+        return false;  // Different size â†’ definitely modified
     }
     
     // Second check: SHA-256 hash must match (catches timestamp fakery)
@@ -187,7 +187,7 @@ bool ScanCache::CanSkipFileWithHash(
             m_hashMismatches.fetch_add(1, std::memory_order_relaxed);
             return false;
         }
-        // Hash matches → file content is genuinely unchanged
+        // Hash matches â†’ file content is genuinely unchanged
         m_cacheHits.fetch_add(1, std::memory_order_relaxed);
         return true;
     }

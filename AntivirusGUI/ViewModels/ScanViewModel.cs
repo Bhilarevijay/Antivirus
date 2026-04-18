@@ -200,16 +200,20 @@ public partial class ScanViewModel : ViewModelBase
             ThreatsFound = progress.InfectedFiles;
             ScanRate = progress.ScanRate;
 
-            // Smart progress estimation when TotalFiles is unknown
-            if (progress.TotalFiles > 0 && progress.TotalFiles > progress.ScannedFiles)
+            // Progress estimation
+            if (progress.TotalFiles > 0 && progress.TotalFiles >= progress.ScannedFiles)
             {
+                // Engine knows total count — use actual percentage
                 ScanProgress = progress.Percentage;
             }
             else
             {
-                // Logarithmic curve: approaches 99% as files scanned increases
-                double estimated = 99.0 * (1.0 - Math.Exp(-progress.ScannedFiles / 5000.0));
-                ScanProgress = Math.Max(1, Math.Min(99, estimated));
+                // Total unknown — use scanned count with a reasonable cap
+                // Full scan on most machines: 50K-200K files
+                // Show progress based on estimated total, cap at 95% until completion
+                double estimatedTotal = Math.Max(progress.ScannedFiles * 1.1, 100000);
+                double pct = (progress.ScannedFiles / estimatedTotal) * 95.0;
+                ScanProgress = Math.Max(1, Math.Min(95, pct));
             }
         });
     }

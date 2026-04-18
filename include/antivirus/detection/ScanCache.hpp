@@ -39,9 +39,9 @@ struct CachedFileEntry {
  * 
  * Strategy:
  * 1. Fast check: compare file size + last_modified timestamp
- * 2. If metadata matches → skip (file unchanged since last scan)
- * 3. If metadata differs → re-scan and update cache
- * 4. If file not in cache → scan and add to cache
+ * 2. If metadata matches â†’ skip (file unchanged since last scan)
+ * 3. If metadata differs â†’ re-scan and update cache
+ * 4. If file not in cache â†’ scan and add to cache
  * 
  * The cache is persisted to disk between sessions, surviving
  * application restarts and machine reboots.
@@ -77,7 +77,7 @@ public:
      * @param path File path
      * @param currentSize Current file size
      * @param currentModTime Current last-modified time
-     * @return true if file is unchanged and was clean → safe to skip
+     * @return true if file is unchanged and was clean â†’ safe to skip
      */
     [[nodiscard]] bool CanSkipFile(
         const FilePath& path,
@@ -88,14 +88,14 @@ public:
     /**
      * @brief Check if file can be skipped using hash verification
      * 
-     * More thorough than CanSkipFile — compares the SHA-256 hash
+     * More thorough than CanSkipFile â€” compares the SHA-256 hash
      * to detect modifications even when timestamps are faked.
      * 
      * @param path File path
      * @param currentSize Current file size
      * @param currentModTimeEpoch Current last-modified time
      * @param currentSha256Hex Current SHA-256 hash (computed by caller)
-     * @return true if file content matches cached hash → safe to skip
+     * @return true if file content matches cached hash â†’ safe to skip
      */
     [[nodiscard]] bool CanSkipFileWithHash(
         const FilePath& path,

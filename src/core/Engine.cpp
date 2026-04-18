@@ -431,8 +431,20 @@ ScanResult Engine::ScanFileContent(const FileInfo& fileInfo) {
     auto startTime = std::chrono::steady_clock::now();
     
     try {
-        // Read file in chunks
-        std::vector<uint8_t> buffer(constants::DEFAULT_CHUNK_SIZE);
+        // Determine how much of the file to read based on scan mode:
+        // Quick scan: first 64KB (header check — fast, catches most PE/script threats)
+        // Full/Custom scan: entire file content (deep scan — thorough, catches embedded threats)
+        constexpr size_t QUICK_READ_SIZE = 64 * 1024;          // 64KB for quick scan
+        constexpr size_t FULL_READ_CAP   = 8 * 1024 * 1024;   // 8MB max per file (memory safety)
+        
+        bool isQuickScan = (m_currentConfig.mode == ScanMode::Quick);
+        size_t readSize = isQuickScan 
+            ? std::min<size_t>(fileInfo.size, QUICK_READ_SIZE)
+            : std::min<size_t>(fileInfo.size, FULL_READ_CAP);
+        
+        if (readSize == 0) readSize = QUICK_READ_SIZE;  // fallback
+        
+        std::vector<uint8_t> buffer(readSize);
         auto bytesRead = m_scanner->ReadFile(fileInfo.path, std::span<uint8_t>(buffer));
         
         if (bytesRead == 0) {
@@ -442,11 +454,16 @@ ScanResult Engine::ScanFileContent(const FileInfo& fileInfo) {
         
         buffer.resize(bytesRead);
         
-        // Compute SHA-256 hash — use GPU if available, otherwise CPU
+        // Compute SHA-256 hash
+        // GPU is used for large files (>256KB) where transfer overhead is justified.
+        // Small files use CPU which is faster due to GPU kernel launch costs.
         SHA256Hash sha256;
+        constexpr size_t GPU_THRESHOLD = 256 * 1024;  // 256KB - files below this use CPU
+        
         if (m_gpuCompute && m_gpuCompute->IsAvailable() && 
-            m_gpuCompute->GetBackend() != GpuBackend::None) {
-            // GPU-accelerated SHA-256
+            m_gpuCompute->GetBackend() != GpuBackend::None &&
+            buffer.size() >= GPU_THRESHOLD) {
+            // GPU-accelerated SHA-256 for large files
             std::vector<std::span<const uint8_t>> batch = { 
                 std::span<const uint8_t>(buffer.data(), buffer.size()) 
             };
@@ -457,6 +474,7 @@ ScanResult Engine::ScanFileContent(const FileInfo& fileInfo) {
                 sha256 = m_hashEngine->ComputeSHA256(buffer);
             }
         } else {
+            // CPU SHA-256 (faster for small files)
             sha256 = m_hashEngine->ComputeSHA256(buffer);
         }
         
