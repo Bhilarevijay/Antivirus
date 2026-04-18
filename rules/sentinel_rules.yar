@@ -25,16 +25,23 @@ rule Ransomware_Note_Indicators
         threat_level = 4
 
     strings:
-        $ransom1 = "your files have been encrypted" nocase
-        $ransom2 = "bitcoin" nocase
-        $ransom3 = "decrypt" nocase
-        $ransom4 = "pay the ransom" nocase
-        $ransom5 = "private key" nocase
-        $ransom6 = "restore your files" nocase
+        // Ransom demand phrases (very specific to ransomware)
+        $demand1 = "your files have been encrypted" nocase
+        $demand2 = "pay the ransom" nocase
+        $demand3 = "send bitcoin" nocase
+        $demand4 = "your personal files are encrypted" nocase
+        $demand5 = "to decrypt your files" nocase
+        $demand6 = "buy decryption key" nocase
+        // Payment indicators
+        $payment1 = "bitcoin wallet" nocase
+        $payment2 = "monero" nocase
+        $payment3 = "restore your files" nocase
         $wallet = /[13][a-km-zA-HJ-NP-Z1-9]{25,34}/
 
     condition:
-        3 of ($ransom*) or ($wallet and 2 of ($ransom*))
+        // Require at least 2 ransom demands + 1 payment indicator (eliminates crypto tool false positives)
+        (2 of ($demand*) and 1 of ($payment*)) or
+        ($wallet and 2 of ($demand*))
 }
 
 rule Shadow_Copy_Deletion

@@ -435,7 +435,7 @@ ScanResult Engine::ScanFileContent(const FileInfo& fileInfo) {
         // Quick scan: first 64KB (header check — fast, catches most PE/script threats)
         // Full/Custom scan: entire file content (deep scan — thorough, catches embedded threats)
         constexpr size_t QUICK_READ_SIZE = 64 * 1024;          // 64KB for quick scan
-        constexpr size_t FULL_READ_CAP   = 8 * 1024 * 1024;   // 8MB max per file (memory safety)
+        constexpr size_t FULL_READ_CAP   = 1 * 1024 * 1024;   // 1MB max per file (memory + speed balance)
         
         bool isQuickScan = (m_currentConfig.mode == ScanMode::Quick);
         size_t readSize = isQuickScan 

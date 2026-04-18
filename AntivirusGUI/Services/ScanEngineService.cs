@@ -152,7 +152,7 @@ public class ScanEngineService
             {
                 try
                 {
-                    using var exitCts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                    using var exitCts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
                     await _activeProcess.WaitForExitAsync(exitCts.Token);
                 }
                 catch
