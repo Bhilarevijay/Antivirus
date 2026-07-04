@@ -147,12 +147,21 @@ public class ScanEngineService
                 ParseLine(clean, result);
             }
 
-            // Wait for process exit (with timeout)
+            // Wait for process exit.
+            // Timeout is mode-dependent:
+            //   quick/custom scan: up to 2 hours
+            //   full scan: up to 8 hours (scanning entire drive takes time)
+            // Full system scans on large drives can take 30-90 minutes.
             if (!_activeProcess.HasExited)
             {
+                bool isFullScan = command.Trim().ToLower() == "full";
+                var scanTimeout = isFullScan
+                    ? TimeSpan.FromHours(8)
+                    : TimeSpan.FromHours(2);
+
                 try
                 {
-                    using var exitCts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+                    using var exitCts = new CancellationTokenSource(scanTimeout);
                     await _activeProcess.WaitForExitAsync(exitCts.Token);
                 }
                 catch

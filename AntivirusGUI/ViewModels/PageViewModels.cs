@@ -897,6 +897,14 @@ public partial class SettingsViewModel : ViewModelBase
                     OnPropertyChanged(nameof(StartWithWindows));
                     OnPropertyChanged(nameof(MinimizeToTray));
                     OnPropertyChanged(nameof(ScanThreads));
+
+                    // Apply the persisted theme immediately.
+                    // LoadSettings() bypasses the property setter (direct field set),
+                    // so OnDarkModeChanged never fires. Call ApplyTheme explicitly
+                    // to ensure the saved Light/Dark preference takes effect on startup.
+#pragma warning disable MVVMTK0034
+                    ApplyTheme(_darkMode);
+#pragma warning restore MVVMTK0034
                 }
             }
         }

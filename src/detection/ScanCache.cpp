@@ -22,7 +22,11 @@ ScanCache::ScanCache(const std::filesystem::path& cachePath,
 
 ScanCache::~ScanCache() {
     try {
-        Save();
+        // Guard against use-after-free: logger shared_ptr may already be
+        // destroyed if Engine is being torn down. Check before calling Save().
+        if (m_logger) {
+            Save();
+        }
     } catch (...) {}
 }
 
@@ -83,7 +87,10 @@ size_t ScanCache::Load() {
 }
 
 bool ScanCache::Save() const {
-    std::shared_lock lock(m_mutex);
+    // MUST use unique_lock: we are writing to disk and must ensure
+    // no concurrent UpdateEntry() call is mid-write. shared_lock
+    // would allow concurrent writers which can corrupt the cache file.
+    std::unique_lock lock(m_mutex);
     
     try {
         // Ensure parent directory exists
