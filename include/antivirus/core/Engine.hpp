@@ -23,10 +23,14 @@
 #include "antivirus/config/IConfigManager.hpp"
 #include "antivirus/gpu/IGpuCompute.hpp"
 
+#include <atomic>
 #include <mutex>
 #include <shared_mutex>
 #include <condition_variable>
 #include <queue>
+#include <thread>
+#include <future>
+#include <vector>
 
 namespace antivirus {
 
@@ -102,6 +106,32 @@ private:
     
     std::vector<FilePath> GetQuickScanPaths() const;
     std::vector<FilePath> GetFullScanPaths() const;
+
+    // ========================================================================
+    // GPU Batch Dispatcher
+    // ========================================================================
+    // Worker threads post hash requests here instead of calling GPU directly.
+    // A dedicated dispatcher thread collects them into batches and submits
+    // ONE GPU call for many files — achieving true parallel GPU utilization.
+    struct GpuHashRequest {
+        std::vector<uint8_t>   buffer;
+        std::promise<SHA256Hash> promise;
+    };
+
+    std::mutex              m_gpuBatchMutex;
+    std::condition_variable m_gpuBatchCv;
+    std::vector<GpuHashRequest> m_gpuBatchQueue;   // pending requests
+    std::thread             m_gpuDispatchThread;
+    std::atomic<bool>       m_gpuDispatchRunning{false};
+
+    static constexpr int    GPU_BATCH_SIZE       = 64;  // files per GPU launch
+    static constexpr int    GPU_BATCH_TIMEOUT_MS = 8;   // max wait before flush
+
+    void StartGpuDispatcher();
+    void StopGpuDispatcher();
+    void GpuDispatcherLoop();
+    // Submit buffer to GPU batch queue, blocks until hash is ready
+    SHA256Hash SubmitGpuHash(std::vector<uint8_t> buffer);
     
     // ========================================================================
     // Dependencies (injected)

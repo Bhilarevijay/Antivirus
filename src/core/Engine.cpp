@@ -122,6 +122,12 @@ bool Engine::Initialize() {
     m_logger->Info("Engine initialized with {} signatures", 
         m_signatureDb->GetSignatureCount());
     
+    // Start GPU batch dispatcher (if GPU available)
+    if (m_gpuCompute && m_gpuCompute->IsAvailable()) {
+        StartGpuDispatcher();
+        m_logger->Info("GPU batch dispatcher started");
+    }
+    
     m_initialized.store(true);
     SetState(ScanState::Idle);
     return true;
@@ -139,6 +145,9 @@ void Engine::Shutdown() {
         CancelScan();
     }
     
+    // Stop GPU dispatcher before thread pool (resolves pending futures)
+    StopGpuDispatcher();
+    
     // Stop thread pool
     if (m_threadPool) {
         m_threadPool->Stop(true);
@@ -149,6 +158,119 @@ void Engine::Shutdown() {
     
     m_logger->Info("Engine shutdown complete");
 }
+
+// ============================================================================
+// GPU Batch Dispatcher Implementation
+// ============================================================================
+
+void Engine::StartGpuDispatcher() {
+    m_gpuDispatchRunning.store(true);
+    m_gpuDispatchThread = std::thread(&Engine::GpuDispatcherLoop, this);
+}
+
+void Engine::StopGpuDispatcher() {
+    if (!m_gpuDispatchRunning.load()) return;
+    
+    m_gpuDispatchRunning.store(false);
+    m_gpuBatchCv.notify_all();  // wake dispatcher so it exits
+    
+    if (m_gpuDispatchThread.joinable()) {
+        m_gpuDispatchThread.join();
+    }
+    
+    // Break any remaining promises so waiting threads don't deadlock
+    std::vector<GpuHashRequest> leftovers;
+    {
+        std::lock_guard<std::mutex> lock(m_gpuBatchMutex);
+        leftovers = std::move(m_gpuBatchQueue);
+        m_gpuBatchQueue.clear();
+    }
+    for (auto& req : leftovers) {
+        try {
+            req.promise.set_exception(
+                std::make_exception_ptr(std::runtime_error("GPU dispatcher stopped")));
+        } catch (...) {}
+    }
+}
+
+void Engine::GpuDispatcherLoop() {
+    // This is the dedicated GPU dispatch thread.
+    // It collects hash requests from all 16 worker threads and submits them
+    // in ONE batch to ComputeSHA256Batch() — true parallel GPU processing.
+    //
+    // Without this, 16 threads each call GPU with 1 file (serial overhead).
+    // With this, the dispatcher accumulates 64 files and submits them together,
+    // letting the CUDA kernel hash all 64 in parallel on the RTX 4050.
+    
+    while (m_gpuDispatchRunning.load()) {
+        std::vector<GpuHashRequest> batch;
+        batch.reserve(GPU_BATCH_SIZE);
+        
+        {
+            std::unique_lock<std::mutex> lock(m_gpuBatchMutex);
+            
+            // Wait for at least one request OR timeout
+            m_gpuBatchCv.wait_for(lock,
+                std::chrono::milliseconds(GPU_BATCH_TIMEOUT_MS),
+                [this] { return !m_gpuBatchQueue.empty() || !m_gpuDispatchRunning.load(); });
+            
+            if (!m_gpuDispatchRunning.load() && m_gpuBatchQueue.empty()) break;
+            
+            // Drain up to GPU_BATCH_SIZE requests
+            while (!m_gpuBatchQueue.empty() && (int)batch.size() < GPU_BATCH_SIZE) {
+                batch.push_back(std::move(m_gpuBatchQueue.back()));
+                m_gpuBatchQueue.pop_back();
+            }
+        }
+        
+        if (batch.empty()) continue;
+        
+        // Build span list for GPU batch call
+        std::vector<std::span<const uint8_t>> spans;
+        spans.reserve(batch.size());
+        for (const auto& req : batch)
+            spans.emplace_back(req.buffer.data(), req.buffer.size());
+        
+        // ONE GPU call for all files in the batch — this is the key!
+        // RTX 4050 hashes all 64 files in parallel, amortizing kernel launch
+        // overhead and transfer costs across the entire batch.
+        try {
+            auto hashes = m_gpuCompute->ComputeSHA256Batch(spans);
+            for (size_t i = 0; i < batch.size(); ++i) {
+                if (i < hashes.size()) {
+                    batch[i].promise.set_value(hashes[i]);
+                } else {
+                    // Hash failed for this file — return empty hash (will fallback to CPU)
+                    batch[i].promise.set_value(SHA256Hash{});
+                }
+            }
+        } catch (...) {
+            // GPU batch failed — break all promises, ScanFileContent catches and uses CPU
+            for (auto& req : batch) {
+                try { req.promise.set_exception(std::current_exception()); } catch(...) {}
+            }
+        }
+    }
+}
+
+SHA256Hash Engine::SubmitGpuHash(std::vector<uint8_t> buffer) {
+    // Submit a file buffer to the GPU batch queue and block until the hash arrives.
+    // The GPU dispatcher collects many of these and submits them in one GPU call.
+    GpuHashRequest req;
+    req.buffer = std::move(buffer);
+    auto future = req.promise.get_future();
+    
+    {
+        std::lock_guard<std::mutex> lock(m_gpuBatchMutex);
+        m_gpuBatchQueue.push_back(std::move(req));
+    }
+    m_gpuBatchCv.notify_one();  // wake dispatcher
+    
+    // Block this worker thread until GPU hash is ready.
+    // While this thread waits, other worker threads keep adding to the batch.
+    return future.get();
+}
+
 
 bool Engine::IsReady() const noexcept {
     return m_initialized.load() && !m_shutdownRequested.load();
@@ -477,33 +599,33 @@ ScanResult Engine::ScanFileContent(const FileInfo& fileInfo) {
         
         buffer.resize(bytesRead);
         
-        // ── GPU-accelerated SHA-256 hash ───────────────────────────────────
-        // GPU threshold: 32KB. Files below this use CPU (CUDA launch overhead
-        // exceeds hash computation time for tiny buffers).
-        // Files >= 32KB go to GPU CUDA SHA-256 kernel for fast hashing.
+        // ── SHA-256 hash via GPU Batch Dispatcher ─────────────────────────────────────
+        // Files >= 32KB go through the GPU batch dispatcher.
+        // The dispatcher accumulates requests from all 16 CPU threads and
+        // submits them in a single ComputeSHA256Batch() call, giving true
+        // parallel GPU processing on the RTX 4050's 2560 CUDA cores.
+        // Files < 32KB use CPU (CUDA launch overhead exceeds computation time).
         SHA256Hash sha256;
         constexpr size_t GPU_THRESHOLD = 32 * 1024;  // 32KB
         bool usedGpu = false;
         
-        if (m_gpuCompute && m_gpuCompute->IsAvailable() &&
-            m_gpuCompute->GetBackend() != GpuBackend::None &&
+        if (m_gpuDispatchRunning.load() &&
+            m_gpuCompute && m_gpuCompute->IsAvailable() &&
             buffer.size() >= GPU_THRESHOLD) {
-            
-            std::vector<std::span<const uint8_t>> batch = {
-                std::span<const uint8_t>(buffer.data(), buffer.size())
-            };
-            auto gpuHashes = m_gpuCompute->ComputeSHA256Batch(batch);
-            if (!gpuHashes.empty()) {
-                sha256 = gpuHashes[0];
+            try {
+                // Submit to batch queue — blocks until dispatcher returns hash
+                sha256 = SubmitGpuHash(std::vector<uint8_t>(buffer.begin(), buffer.end()));
                 usedGpu = true;
-            } else {
+            } catch (...) {
+                // GPU failed — fall back to CPU silently
                 sha256 = m_hashEngine->ComputeSHA256(buffer);
             }
         } else {
+            // CPU SHA-256 for small files (< 32KB)
             sha256 = m_hashEngine->ComputeSHA256(buffer);
         }
         
-        // Mid-scan cancellation check after expensive read+hash step
+        // Mid-scan cancellation check
         if (m_state.load() == ScanState::Cancelled) {
             return result;
         }
