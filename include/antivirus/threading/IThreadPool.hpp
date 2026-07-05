@@ -69,6 +69,13 @@ public:
     virtual void WaitAll() = 0;
     
     /**
+     * @brief Drain (discard) all pending tasks from the queue
+     * Used during cancellation to allow WaitAll() to return quickly.
+     * Already-running tasks complete normally, but queued tasks are dropped.
+     */
+    virtual void DrainQueue() = 0;
+    
+    /**
      * @brief Stop the thread pool
      * @param waitForTasks If true, wait for pending tasks to complete
      */

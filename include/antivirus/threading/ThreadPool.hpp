@@ -52,6 +52,7 @@ public:
     [[nodiscard]] size_t GetThreadCount() const noexcept override;
     [[nodiscard]] size_t GetPendingTaskCount() const noexcept override;
     void WaitAll() override;
+    void DrainQueue() override;
     void Stop(bool waitForTasks = true) override;
     [[nodiscard]] bool IsRunning() const noexcept override;
 

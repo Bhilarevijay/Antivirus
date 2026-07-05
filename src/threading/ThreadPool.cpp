@@ -85,6 +85,26 @@ void ThreadPool::WaitAll() {
     });
 }
 
+void ThreadPool::DrainQueue() {
+    // Discard all queued (not yet started) tasks.
+    // Used on cancellation so WaitAll() unblocks after only the
+    // currently-active tasks finish (16 threads × 1 task each),
+    // rather than waiting for all 64,000 queued tasks to execute.
+    size_t drained = 0;
+    TaskWrapper dummy;
+    while (auto task = m_globalQueue.TryPop()) {
+        // Task popped and immediately discarded (destructor runs)
+        drained++;
+        m_pendingTasks.fetch_sub(1);
+    }
+    
+    if (drained > 0) {
+        // Wake up WaitAll() — it may now see pendingTasks==0
+        std::lock_guard<std::mutex> lock(m_waitMutex);
+        m_waitCondition.notify_all();
+    }
+}
+
 void ThreadPool::Stop(bool waitForTasks) {
     if (m_stopped.exchange(true)) {
         return;  // Already stopped
