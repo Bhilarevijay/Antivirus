@@ -431,6 +431,13 @@ ScanResult Engine::ScanFileContent(const FileInfo& fileInfo) {
     ScanResult result;
     result.fileInfo = fileInfo;
     
+    // Early cancellation check — drain the thread pool fast when Stop is pressed.
+    // Without this, every queued task runs to completion even after cancel,
+    // causing the scan to appear stuck for minutes after pressing Stop.
+    if (m_state.load() == ScanState::Cancelled) {
+        return result;  // Return immediately without scanning
+    }
+    
     auto startTime = std::chrono::steady_clock::now();
     
     try {
@@ -460,15 +467,18 @@ ScanResult Engine::ScanFileContent(const FileInfo& fileInfo) {
         buffer.resize(bytesRead);
         
         // Compute SHA-256 hash
-        // GPU is used for large files (>256KB) where transfer overhead is justified.
-        // Small files use CPU which is faster due to GPU kernel launch costs.
+        // GPU threshold: 32KB — anything larger benefits from CUDA launch amortisation.
+        // Quick scan reads up to 64KB, so files >= 32KB use GPU.
+        // Full scan reads up to 8MB, so almost everything uses GPU.
         SHA256Hash sha256;
-        constexpr size_t GPU_THRESHOLD = 256 * 1024;  // 256KB - files below this use CPU
+        constexpr size_t GPU_THRESHOLD = 32 * 1024;  // 32KB — balanced GPU/CPU cutover
         
         if (m_gpuCompute && m_gpuCompute->IsAvailable() && 
             m_gpuCompute->GetBackend() != GpuBackend::None &&
             buffer.size() >= GPU_THRESHOLD) {
-            // GPU-accelerated SHA-256 for large files
+            // GPU-accelerated SHA-256 — feed as a single-item batch.
+            // The overhead of one cudaMemcpy + kernel launch is worth it for
+            // files >= 32KB, and avoids blocking the CPU on a long hash loop.
             std::vector<std::span<const uint8_t>> batch = { 
                 std::span<const uint8_t>(buffer.data(), buffer.size()) 
             };
@@ -476,11 +486,17 @@ ScanResult Engine::ScanFileContent(const FileInfo& fileInfo) {
             if (!gpuHashes.empty()) {
                 sha256 = gpuHashes[0];
             } else {
+                // GPU call failed — fall back to CPU silently
                 sha256 = m_hashEngine->ComputeSHA256(buffer);
             }
         } else {
-            // CPU SHA-256 (faster for small files)
+            // CPU SHA-256 for small files (< 32KB) — faster than CUDA launch overhead
             sha256 = m_hashEngine->ComputeSHA256(buffer);
+        }
+        
+        // Mid-scan cancellation check after expensive read+hash step
+        if (m_state.load() == ScanState::Cancelled) {
+            return result;
         }
         
         // Hash-based cache verification:
