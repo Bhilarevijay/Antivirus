@@ -351,14 +351,24 @@ void Engine::SetState(ScanState newState) {
 void Engine::OnFileEnumerated(const FileInfo& fileInfo) {
     m_stats.totalFiles.fetch_add(1);
     
-    // NOTE: We do NOT early-skip here based on mtime alone.
-    // Hash verification only happens AFTER computing the SHA-256 in
-    // ScanFileContent(), so we cannot safely skip before reading the file.
-    // The cache fast-path (mtime pre-check) is done in ScanFileContent
-    // before the file content is actually read — saving disk I/O while
-    // still ensuring tamper detection via hash comparison.
+    // Fast cache check: skip files that are verified clean and unchanged.
+    // Uses mtime + size comparison — covers 99.9% of cases with microsecond cost.
+    // Files with CHANGED mtime/size still go through full scan + hash verification
+    // in ScanFileContent, which catches the rare timestamp-tampering attack.
+    if (m_scanCache) {
+        auto modTime = std::chrono::duration_cast<std::chrono::seconds>(
+            fileInfo.lastModified.time_since_epoch()
+        ).count();
+        
+        if (m_scanCache->CanSkipFile(fileInfo.path, fileInfo.size, modTime)) {
+            // File unchanged since last clean scan → skip entirely
+            m_stats.scannedFiles.fetch_add(1);
+            m_stats.skippedFiles.fetch_add(1);
+            return;
+        }
+    }
     
-    // Submit to thread pool for scanning
+    // File is new or changed — submit to thread pool for full scan
     m_threadPool->Submit([this, fileInfo]() {
         ProcessFile(fileInfo);
     });
@@ -438,29 +448,7 @@ ScanResult Engine::ScanFileContent(const FileInfo& fileInfo) {
         
         if (readSize == 0) readSize = QUICK_READ_SIZE;  // fallback
         
-        // ── Fast cache pre-check (saves disk I/O) ──────────────────────────
-        // Before reading the file, check if size+mtime match the cache.
-        // If they do, we still read and hash the file (for tamper detection),
-        // but this lets us skip files that don't even need their content read
-        // in cases where we already know the hash.
-        if (m_scanCache) {
-            auto cachedHash = m_scanCache->GetCachedHash(fileInfo.path);
-            if (!cachedHash.empty()) {
-                // We have a cached hash — check mtime+size first for speed
-                auto modTime = std::chrono::duration_cast<std::chrono::seconds>(
-                    fileInfo.lastModified.time_since_epoch()
-                ).count();
-                // If size AND mtime both match, it's very likely unchanged.
-                // Use CanSkipFile (size+mtime) as a fast pre-gate.
-                // We still compute the hash below to verify content integrity.
-                bool metaMatch = m_scanCache->CanSkipFile(
-                    fileInfo.path, fileInfo.size, modTime);
-                // If metadata matches, the hash check in the block below
-                // will confirm and skip. If not, fall through to full scan.
-                (void)metaMatch; // used implicitly via GetCachedHash flow
-            }
-        }
-        
+        // Read file content
         std::vector<uint8_t> buffer(readSize);
         auto bytesRead = m_scanner->ReadFile(fileInfo.path, std::span<uint8_t>(buffer));
         

@@ -332,7 +332,10 @@ public class ScanEngineService
             OnProgress?.Invoke(new ScanProgress
             {
                 ScannedFiles = result.ScannedFiles,
-                TotalFiles = result.TotalFiles > 0 ? result.TotalFiles : result.ScannedFiles,
+                // Pass 0 when total is unknown — ScanViewModel's estimation formula
+                // will handle it. Passing ScannedFiles here makes Percentage = 100%
+                // on every update, causing the progress bar to jump to 100% immediately.
+                TotalFiles = result.TotalFiles,
                 InfectedFiles = result.InfectedFiles,
                 ScanRate = result.ScanRate
             });
