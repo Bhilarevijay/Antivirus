@@ -125,7 +125,7 @@ private:
     std::atomic<bool>       m_gpuDispatchRunning{false};
 
     static constexpr int    GPU_BATCH_SIZE       = 64;  // files per GPU launch
-    static constexpr int    GPU_BATCH_TIMEOUT_MS = 8;   // max wait before flush
+    static constexpr int    GPU_BATCH_TIMEOUT_MS = 2;   // max ms wait: workers block ≤2ms per file
 
     void StartGpuDispatcher();
     void StopGpuDispatcher();

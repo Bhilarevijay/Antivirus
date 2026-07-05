@@ -404,11 +404,13 @@ void Engine::CancelScan() {
     m_paused.store(false);
     m_pauseCondition.notify_all();
     
-    // CRITICAL: Drain all queued (not yet started) tasks from the thread pool.
-    // Without this, WaitAll() blocks until all 64,000+ queued tasks execute,
-    // even though each returns immediately (the queue must still be drained).
-    // DrainQueue() discards the pending tasks, so WaitAll() unblocks as soon
-    // as the ~16 already-running tasks finish — typically within 100ms.
+    // Wake the GPU batch dispatcher so workers blocked on future.get()
+    // get their results quickly instead of waiting up to 2ms timeout.
+    // The dispatcher processes whatever is in the queue then workers
+    // check Cancelled state and exit immediately.
+    m_gpuBatchCv.notify_all();
+    
+    // Drain queued (not yet started) file-scan tasks so WaitAll() returns fast
     m_threadPool->DrainQueue();
 }
 
@@ -578,7 +580,7 @@ ScanResult Engine::ScanFileContent(const FileInfo& fileInfo) {
         // Quick scan: first 64KB (header check — fast, catches most PE/script threats)
         // Full/Custom scan: entire file content up to 8MB (deep scan — thorough,
         //   catches embedded threats in the middle/end of large PE files)
-        constexpr size_t QUICK_READ_SIZE = 64  * 1024;          // 64KB for quick scan
+        constexpr size_t QUICK_READ_SIZE = 64  * 1024;
         constexpr size_t FULL_READ_CAP   = 8   * 1024 * 1024;  // 8MB max per file
         
         bool isQuickScan = (m_currentConfig.mode == ScanMode::Quick);

@@ -13,13 +13,15 @@ namespace antivirus {
 
 ThreadPool::ThreadPool(size_t threadCount, bool enableNuma)
     : m_enableNuma(enableNuma)
-    , m_globalQueue(16384)
+    , m_globalQueue(65536)  // 65536 capacity: handles 64k+ uncached files without enumeration spin
 {
-    // Auto-detect thread count
+    // Auto-detect thread count — use extra threads so GPU-blocked workers
+    // don't stall cache-hit files. GPU batch dispatcher blocks up to 16 workers
+    // for up to 2ms; doubling thread count ensures progress continues.
     if (threadCount == 0) {
-        threadCount = std::thread::hardware_concurrency();
+        threadCount = std::thread::hardware_concurrency() * 2;
         if (threadCount == 0) {
-            threadCount = 4;  // Fallback
+            threadCount = 8;  // Fallback
         }
     }
     
